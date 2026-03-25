@@ -1,4 +1,8 @@
 import '../src/global.css';
+// IMPORTANT: This import must stay at the top — it registers the background GPS task
+// with TaskManager at bundle-load time, before any component renders.
+import '@/services/backgroundLocationTask';
+
 import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -12,8 +16,22 @@ import { runMigrations } from '@/db/migrations';
 import { setupAndroidChannel } from '@/notifications/scheduler';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AnimatedSplash } from '@/components/AnimatedSplash';
+import { RideSessionProvider } from '@/contexts/RideSessionContext';
+import { useTrackingMode } from '@/hooks/useTrackingMode';
 
 SplashScreen.preventAutoHideAsync();
+
+// Runs the launch permission recheck for auto-track mode.
+// Separated so it can use the useTrackingMode hook.
+function LaunchChecker() {
+  const { recheckOnLaunch } = useTrackingMode();
+
+  useEffect(() => {
+    recheckOnLaunch().catch(() => {});
+  }, []);
+
+  return null;
+}
 
 export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
@@ -53,17 +71,20 @@ export default function RootLayout() {
     <ErrorBoundary>
       <GestureHandlerRootView className="flex-1">
         <SafeAreaProvider>
-          <StatusBar style={showSplash ? 'light' : 'light'} />
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="vehicle/add" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="vehicle/[id]" />
-            <Stack.Screen name="fuel/add/[vehicleId]" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="maintenance/log/[itemId]" options={{ presentation: 'modal' }} />
-          </Stack>
-          {showSplash && (
-            <AnimatedSplash onFinish={() => setShowSplash(false)} />
-          )}
+          <RideSessionProvider>
+            <LaunchChecker />
+            <StatusBar style={showSplash ? 'light' : 'light'} />
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="vehicle/add" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="vehicle/[id]" />
+              <Stack.Screen name="fuel/add/[vehicleId]" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="maintenance/log/[itemId]" options={{ presentation: 'modal' }} />
+            </Stack>
+            {showSplash && (
+              <AnimatedSplash onFinish={() => setShowSplash(false)} />
+            )}
+          </RideSessionProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>
     </ErrorBoundary>

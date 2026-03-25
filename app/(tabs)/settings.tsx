@@ -1,9 +1,12 @@
-import { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
+import { useState, useCallback } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Switch, Alert, Linking } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BellIcon, ZapIcon, ShieldIcon, DownloadIcon, StarIcon, ChevronRightIcon } from '@/components/icons';
+import { BellIcon, ZapIcon, ShieldIcon, DownloadIcon, StarIcon, ChevronRightIcon, NavigationIcon, PlayIcon } from '@/components/icons';
 import { exportFuelLogs } from '@/utils/export';
 import { useVehicles } from '@/hooks/useVehicles';
+import { useTrackingMode, SwitchToAutoOutcome } from '@/hooks/useTrackingMode';
+import { getTrackingMode } from '@/services/trackingPreferences';
 
 interface SettingsRowProps {
   icon: React.ReactNode;
@@ -51,6 +54,144 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
     <Text className="text-[11px] uppercase tracking-widest text-zen-muted font-inter-medium mb-1.5 mt-3.5">
       {children}
     </Text>
+  );
+}
+
+// Odometer tracking mode selector
+function TrackingModeSelector() {
+  const { vehicles } = useVehicles();
+  const { switchToAuto, switchToManual } = useTrackingMode();
+  const [currentMode, setCurrentMode] = useState<'manual' | 'auto'>('manual');
+  const [switching, setSwitching] = useState(false);
+
+  useFocusEffect(useCallback(() => {
+    setCurrentMode(getTrackingMode());
+  }, []));
+
+  const handleSwitchToAuto = async () => {
+    const vehicleId = vehicles[0]?.id;
+    if (!vehicleId) {
+      Alert.alert('No vehicle', 'Add a vehicle first before enabling auto-track.');
+      return;
+    }
+    setSwitching(true);
+    const outcome: SwitchToAutoOutcome = await switchToAuto(vehicleId);
+    setSwitching(false);
+
+    switch (outcome) {
+      case 'granted':
+        setCurrentMode('auto');
+        break;
+      case 'foreground_denied':
+      case 'background_only_while_using':
+        Alert.alert(
+          'Auto-track needs "Always Allow"',
+          "You've been kept on Manual Ride Session. Tap again to retry.",
+          [{ text: 'OK' }]
+        );
+        break;
+      case 'foreground_never_ask':
+      case 'background_never_ask':
+        Alert.alert(
+          'Permission required',
+          'Auto-track needs "Always Allow" for location. Please enable it in your phone Settings.',
+          [
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+        break;
+      case 'background_denied':
+        Alert.alert('Could not start auto-track', 'Please try again.', [{ text: 'OK' }]);
+        break;
+    }
+  };
+
+  const handleSwitchToManual = async () => {
+    setSwitching(true);
+    await switchToManual();
+    setSwitching(false);
+    setCurrentMode('manual');
+  };
+
+  return (
+    <View style={{ gap: 8 }}>
+      {/* Manual option */}
+      <TouchableOpacity
+        onPress={currentMode !== 'manual' && !switching ? handleSwitchToManual : undefined}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 12,
+          paddingHorizontal: 14, paddingVertical: 14,
+          borderWidth: 2,
+          borderColor: currentMode === 'manual' ? '#1B6CA8' : 'rgba(27,108,168,0.10)',
+          borderRadius: 16,
+          backgroundColor: currentMode === 'manual' ? 'rgba(27,108,168,0.06)' : 'white',
+        }}
+        activeOpacity={currentMode === 'manual' ? 1 : 0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Select manual ride session"
+      >
+        <View style={{
+          width: 34, height: 34, borderRadius: 10,
+          backgroundColor: currentMode === 'manual' ? '#1B6CA8' : '#EFF8FF',
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <PlayIcon color={currentMode === 'manual' ? 'white' : '#1B6CA8'} size={13} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: currentMode === 'manual' ? '#1B6CA8' : '#374151' }}>
+            Manual Ride Session
+          </Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: '#6B7280', marginTop: 2 }}>
+            Tap Start before you ride. Saves battery.
+          </Text>
+        </View>
+        {currentMode === 'manual' && (
+          <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#1B6CA8', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: 'white', fontSize: 11, fontFamily: 'Inter_600SemiBold' }}>✓</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* Auto option */}
+      <TouchableOpacity
+        onPress={currentMode !== 'auto' && !switching ? handleSwitchToAuto : undefined}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 12,
+          paddingHorizontal: 14, paddingVertical: 14,
+          borderWidth: 2,
+          borderColor: currentMode === 'auto' ? '#2D6A4F' : 'rgba(27,108,168,0.10)',
+          borderRadius: 16,
+          backgroundColor: currentMode === 'auto' ? 'rgba(45,106,79,0.06)' : 'white',
+          opacity: switching ? 0.6 : 1,
+        }}
+        activeOpacity={currentMode === 'auto' ? 1 : 0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Select auto-track always"
+        disabled={switching}
+      >
+        <View style={{
+          width: 34, height: 34, borderRadius: 10,
+          backgroundColor: currentMode === 'auto' ? '#2D6A4F' : '#ECFDF5',
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <NavigationIcon color={currentMode === 'auto' ? 'white' : '#2D6A4F'} size={13} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: currentMode === 'auto' ? '#2D6A4F' : '#374151' }}>
+            Auto-track Always
+          </Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: '#6B7280', marginTop: 2 }}>
+            {switching ? 'Requesting permissions…' : 'Tracks automatically in background. Uses more battery.'}
+          </Text>
+        </View>
+        {currentMode === 'auto' && (
+          <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#2D6A4F', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: 'white', fontSize: 11, fontFamily: 'Inter_600SemiBold' }}>✓</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -106,6 +247,15 @@ export default function SettingsScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Odometer Tracking */}
+        <GroupLabel>Odometer Tracking</GroupLabel>
+        <View
+          className="bg-zen-surface rounded-2xl overflow-hidden border border-zen-primary/[0.07] mb-3 p-3.5"
+          style={{ shadowColor: '#1B6CA8', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 }}
+        >
+          <TrackingModeSelector />
+        </View>
+
         {/* Reminders */}
         <GroupLabel>Reminders</GroupLabel>
         <SettingsGroup>

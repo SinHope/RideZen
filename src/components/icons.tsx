@@ -146,3 +146,27 @@ export function CheckIcon({ color = defaultProps.color, size = defaultProps.size
     </Svg>
   );
 }
+
+export function PlayIcon({ color = defaultProps.color, size = defaultProps.size }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Polygon points="5 3 19 12 5 21 5 3" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" fill={color} />
+    </Svg>
+  );
+}
+
+export function StopSquareIcon({ color = defaultProps.color, size = defaultProps.size }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x="3" y="3" width="18" height="18" rx="3" stroke={color} strokeWidth={1.8} fill={color} />
+    </Svg>
+  );
+}
+
+export function NavigationIcon({ color = defaultProps.color, size = defaultProps.size }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Polygon points="3 11 22 2 13 21 11 13 3 11" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}

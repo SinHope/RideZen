@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { logToFile } from '@/utils/logger';
 
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {
   try {
@@ -10,6 +10,9 @@ export async function runMigrations(db: SQLiteDatabase): Promise<void> {
 
     if (currentVersion < 1) {
       await migrateV1(db);
+    }
+    if (currentVersion < 2) {
+      migrateV2(db);
     }
 
     db.execSync(`PRAGMA user_version = ${CURRENT_VERSION}`);
@@ -103,4 +106,14 @@ async function migrateV1(db: SQLiteDatabase): Promise<void> {
   db.execSync(`CREATE INDEX IF NOT EXISTS idx_fuel_vehicle ON fuel_logs(vehicle_id, date DESC)`);
   db.execSync(`CREATE INDEX IF NOT EXISTS idx_maint_vehicle ON maintenance_items(vehicle_id)`);
   db.execSync(`CREATE INDEX IF NOT EXISTS idx_maint_logs_item ON maintenance_logs(item_id)`);
+}
+
+function migrateV2(db: SQLiteDatabase): void {
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
 }

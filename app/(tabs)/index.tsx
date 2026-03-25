@@ -8,9 +8,15 @@ import { useMaintenance } from '@/hooks/useMaintenance';
 import { fuelRepo } from '@/repositories/fuelRepo';
 import { VehicleCard } from '@/components/VehicleCard';
 import { ConfirmModal } from '@/components/ConfirmModal';
+import { TrackingOnboardingModal } from '@/components/TrackingOnboardingModal';
+import { AutoTrackBanner } from '@/components/AutoTrackBanner';
 import { PlusIcon, SearchIcon, ChevronRightIcon } from '@/components/icons';
 import { Vehicle } from '@/types';
-import { consumeMaintenancePromptPending } from '@/utils/flags';
+import { consumeMaintenancePromptPending, consumeTrackingOnboardingPending } from '@/utils/flags';
+import { useRideSession } from '@/contexts/RideSessionContext';
+import { useTrackingMode, SwitchToAutoOutcome } from '@/hooks/useTrackingMode';
+import { getTrackingMode } from '@/services/trackingPreferences';
+import { Alert } from 'react-native';
 
 // Alert strip with pulse animation
 function AlertStrip({ message, onPress }: { message: string; onPress: () => void }) {
@@ -59,8 +65,28 @@ function QuickStatCard({ label, value, unit, sub }: { label: string; value: stri
   );
 }
 
-// Per-vehicle enriched data loader
-function VehicleCardWrapper({ vehicle, onPress }: { vehicle: Vehicle; onPress: () => void }) {
+// Per-vehicle enriched data loader — extended with ride session props
+interface WrapperProps {
+  vehicle: Vehicle;
+  trackingMode: 'manual' | 'auto';
+  isTracking: boolean;
+  isAnyRideActive: boolean;
+  rideDistanceKm: number;
+  onStartRide: () => void;
+  onEndRide: () => void;
+  onPress: () => void;
+}
+
+function VehicleCardWrapper({
+  vehicle,
+  trackingMode,
+  isTracking,
+  isAnyRideActive,
+  rideDistanceKm,
+  onStartRide,
+  onEndRide,
+  onPress,
+}: WrapperProps) {
   const { overdueCount, dueCount } = useMaintenance(vehicle.id, vehicle.current_odometer);
   const [lastRefuelDate, setLastRefuelDate] = useState<string | undefined>();
   const [avgConsumption, setAvgConsumption] = useState<number | undefined>();
@@ -82,6 +108,12 @@ function VehicleCardWrapper({ vehicle, onPress }: { vehicle: Vehicle; onPress: (
       avgConsumption={avgConsumption}
       lastRefuelDate={lastRefuelDate}
       onPress={onPress}
+      trackingMode={trackingMode}
+      isTracking={isTracking}
+      isAnyRideActive={isAnyRideActive}
+      rideDistanceKm={rideDistanceKm}
+      onStartRide={onStartRide}
+      onEndRide={onEndRide}
     />
   );
 }
@@ -93,16 +125,69 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
   const [showMaintenancePrompt, setShowMaintenancePrompt] = useState(false);
+  const [showTrackingOnboarding, setShowTrackingOnboarding] = useState(false);
+  const [trackingMode, setTrackingModeState] = useState<'manual' | 'auto'>('manual');
+  const [banner, setBanner] = useState<{ message: string; showSettingsLink: boolean } | null>(null);
+
+  // Ride session — app-level context, survives navigation
+  const { isTracking, activeVehicleId, distanceKm, startRide, endRide } = useRideSession();
+  const { recheckOnLaunch, switchToAuto } = useTrackingMode();
 
   useFocusEffect(useCallback(() => {
     reload();
-    // Check if we should show the maintenance prompt
+    // Reload tracking mode from SQLite (may have changed in Settings)
+    setTrackingModeState(getTrackingMode());
+    // Maintenance prompt (existing flow)
     setTimeout(() => {
       if (consumeMaintenancePromptPending()) {
         setShowMaintenancePrompt(true);
       }
     }, 1200);
+    // Tracking onboarding (new flow — first vehicle only)
+    if (consumeTrackingOnboardingPending()) {
+      setShowTrackingOnboarding(true);
+    }
   }, []));
+
+  // Launch recheck for auto-track mode — runs once on first focus
+  const launchRecheckDone = useRef(false);
+  useFocusEffect(useCallback(() => {
+    if (launchRecheckDone.current) return;
+    launchRecheckDone.current = true;
+    recheckOnLaunch().then(result => {
+      if (result.changed && result.reason === 'permission_revoked') {
+        setBanner({
+          message: 'Background location was turned off. Switched to Manual Ride Session.',
+          showSettingsLink: false,
+        });
+        setTrackingModeState('manual');
+      }
+    }).catch(() => {});
+  }, []));
+
+  const handleStartRide = async (vehicleId: number) => {
+    const ok = await startRide(vehicleId);
+    if (!ok) return;
+    Alert.alert('', "Tap 'End Ride' when you're done to save your distance.", [{ text: 'Got it' }]);
+  };
+
+  const handleEndRide = async () => {
+    await endRide();
+    Alert.alert('Ride saved!', 'Your odometer has been updated.', [{ text: 'OK' }]);
+    reload(); // refresh odometer display
+  };
+
+  const handleBannerReEnable = async () => {
+    const vehicleId = vehicles[0]?.id;
+    if (!vehicleId) return;
+    const outcome: SwitchToAutoOutcome = await switchToAuto(vehicleId);
+    if (outcome === 'granted') {
+      setBanner(null);
+      setTrackingModeState('auto');
+    } else if (outcome === 'foreground_never_ask' || outcome === 'background_never_ask') {
+      setBanner({ message: 'Please enable "Always Allow" location in Settings.', showSettingsLink: true });
+    }
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -172,7 +257,17 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1B6CA8" />}
       >
-        {/* Alert strip for overdue items — shown if any vehicle has overdue */}
+        {/* Auto-track revocation banner */}
+        {banner && (
+          <AutoTrackBanner
+            message={banner.message}
+            showSettingsLink={banner.showSettingsLink}
+            onReEnable={handleBannerReEnable}
+            onDismiss={() => setBanner(null)}
+          />
+        )}
+
+        {/* Alert strip for overdue items */}
         {vehicles.length > 0 && (
           <AlertStrip
             message="1 item overdue — Engine Oil on Yamaha NVX"
@@ -186,12 +281,10 @@ export default function HomeScreen() {
         </Text>
 
         {loading ? (
-          // Skeleton
           [1, 2].map(i => (
             <View key={i} className="h-28 rounded-3xl bg-gray-200 mb-3 animate-pulse" />
           ))
         ) : vehicles.length === 0 ? (
-          // Empty state
           <View className="items-center py-8">
             <Text className="text-zen-muted text-base font-inter text-center mb-4">
               Add your first vehicle to get started
@@ -215,6 +308,12 @@ export default function HomeScreen() {
             <VehicleCardWrapper
               key={vehicle.id}
               vehicle={vehicle}
+              trackingMode={trackingMode}
+              isTracking={isTracking && activeVehicleId === vehicle.id}
+              isAnyRideActive={isTracking}
+              rideDistanceKm={activeVehicleId === vehicle.id ? distanceKm : 0}
+              onStartRide={() => handleStartRide(vehicle.id)}
+              onEndRide={handleEndRide}
               onPress={() => router.push(`/vehicle/${vehicle.id}`)}
             />
           ))
@@ -259,6 +358,16 @@ export default function HomeScreen() {
         cancelColor="#F4A035"
         onConfirm={() => { setShowMaintenancePrompt(false); router.push('/(tabs)/maintenance'); }}
         onCancel={() => setShowMaintenancePrompt(false)}
+      />
+
+      <TrackingOnboardingModal
+        visible={showTrackingOnboarding}
+        vehicleId={vehicles[0]?.id ?? 0}
+        onComplete={() => {
+          setShowTrackingOnboarding(false);
+          setTrackingModeState(getTrackingMode());
+          Alert.alert('', 'You can change your tracking mode anytime in Settings.', [{ text: 'Got it' }]);
+        }}
       />
     </View>
   );

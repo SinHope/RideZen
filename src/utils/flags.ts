@@ -12,3 +12,15 @@ export function consumeMaintenancePromptPending(): boolean {
   _maintenancePromptPending = false;
   return val;
 }
+
+let _trackingOnboardingPending = false;
+
+export function setTrackingOnboardingPending() {
+  _trackingOnboardingPending = true;
+}
+
+export function consumeTrackingOnboardingPending(): boolean {
+  const val = _trackingOnboardingPending;
+  _trackingOnboardingPending = false;
+  return val;
+}

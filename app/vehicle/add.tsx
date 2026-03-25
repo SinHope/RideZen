@@ -6,7 +6,8 @@ import { vehicleRepo } from '@/repositories/vehicleRepo';
 import { VehicleType } from '@/types';
 import { ArrowLeftIcon, CheckIcon } from '@/components/icons';
 import { ConfirmModal } from '@/components/ConfirmModal';
-import { setMaintenancePromptPending } from '@/utils/flags';
+import { setMaintenancePromptPending, setTrackingOnboardingPending } from '@/utils/flags';
+import { isOnboardingShown } from '@/services/trackingPreferences';
 
 const VEHICLE_TYPES: { type: VehicleType; label: string; sub: string; emoji: string }[] = [
   { type: 'scooter',     label: 'Scooter / CVT',       sub: 'Yamaha NVX, Honda PCX, etc.',    emoji: '🛵' },
@@ -87,6 +88,14 @@ export default function AddVehicleScreen() {
     }
     setShowConfirmModal(false);
     setMaintenancePromptPending();
+
+    // Trigger tracking onboarding on first vehicle add only
+    const allVehicles = await vehicleRepo.getAll();
+    const isFirstVehicle = (allVehicles.data?.length ?? 0) === 1;
+    if (isFirstVehicle && !isOnboardingShown()) {
+      setTrackingOnboardingPending();
+    }
+
     router.replace('/(tabs)');
   };
 

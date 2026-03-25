@@ -18,7 +18,11 @@
       "infoPlist": {
         "NSUserNotificationsUsageDescription": "RideZen sends reminders when your vehicle service is due.",
         "NSPhotoLibraryUsageDescription": "RideZen lets you attach a photo to your vehicle profile.",
-        "NSCameraUsageDescription": "RideZen lets you take a photo for your vehicle profile."
+        "NSCameraUsageDescription": "RideZen lets you take a photo for your vehicle profile.",
+        "NSLocationWhenInUseUsageDescription": "RideZen uses your location to calculate riding distance.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "RideZen uses your location to track riding distance in the background.",
+        "NSLocationAlwaysUsageDescription": "RideZen tracks riding distance in the background.",
+        "UIBackgroundModes": ["location"]
       },
       "associatedDomains": [
         "applinks:ridezen.app"
@@ -32,7 +36,8 @@
         "android.permission.NOTIFICATIONS",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        ["ACCESS_BACKGROUND_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
       ],
       "intentFilters": [
         {
