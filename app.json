@@ -1,0 +1,87 @@
+{
+  "expo": {
+    "name": "RideZen",
+    "slug": "ridezen",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "ridezen",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F0F8FF"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.tulusnas.ridezen",
+      "infoPlist": {
+        "NSUserNotificationsUsageDescription": "RideZen sends reminders when your vehicle service is due.",
+        "NSPhotoLibraryUsageDescription": "RideZen lets you attach a photo to your vehicle profile.",
+        "NSCameraUsageDescription": "RideZen lets you take a photo for your vehicle profile."
+      },
+      "associatedDomains": [
+        "applinks:ridezen.app"
+      ],
+      "minimumOsVersion": "16.0"
+    },
+    "android": {
+      "package": "com.tulusnas.ridezen",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.NOTIFICATIONS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "ridezen"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
+      "minSdkVersion": 23
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#1B6CA8",
+          "defaultChannel": "maintenance"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "RideZen lets you attach a photo to your vehicle profile.",
+          "cameraPermission": "RideZen lets you take a photo for your vehicle profile."
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "fonts": []
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ab0d4911-9f0a-434b-8b4d-2c0611bb432d"
+      }
+    }
+  }
+}
