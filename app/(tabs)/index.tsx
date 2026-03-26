@@ -1,3 +1,5 @@
+// index.tsx
+
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Animated, TextInput } from 'react-native';
 import { router } from 'expo-router';

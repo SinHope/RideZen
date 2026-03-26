@@ -1,3 +1,5 @@
+// settings.tsx
+
 import { useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Switch, Alert, Linking } from 'react-native';
 import { useFocusEffect } from 'expo-router';

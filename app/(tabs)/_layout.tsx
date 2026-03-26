@@ -1,3 +1,5 @@
+// _layout.tsx
+
 import { Tabs } from 'expo-router';
 import { View, Text, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

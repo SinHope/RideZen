@@ -22,7 +22,9 @@
         "NSLocationWhenInUseUsageDescription": "RideZen uses your location to calculate riding distance.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "RideZen uses your location to track riding distance in the background.",
         "NSLocationAlwaysUsageDescription": "RideZen tracks riding distance in the background.",
-        "UIBackgroundModes": ["location"]
+        "UIBackgroundModes": [
+          "location"
+        ]
       },
       "associatedDomains": [
         "applinks:ridezen.app"
@@ -37,7 +39,11 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
-        ["ACCESS_BACKGROUND_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+        [
+          "ACCESS_BACKGROUND_LOCATION",
+          "ACCESS_FINE_LOCATION",
+          "ACCESS_COARSE_LOCATION"
+        ]
       ],
       "intentFilters": [
         {
@@ -77,7 +83,8 @@
         {
           "fonts": []
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true
