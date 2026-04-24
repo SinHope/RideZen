@@ -39,11 +39,9 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
-        [
-          "ACCESS_BACKGROUND_LOCATION",
-          "ACCESS_FINE_LOCATION",
-          "ACCESS_COARSE_LOCATION"
-        ]
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ],
       "intentFilters": [
         {
@@ -79,12 +77,18 @@
         }
       ],
       [
-        "expo-font",
+        "expo-location",
         {
-          "fonts": []
+          "locationAlwaysAndWhenInUsePermission": "RideZen uses your location to track riding distance in the background.",
+          "isAndroidBackgroundLocationEnabled": true
         }
       ],
-      "expo-localization"
+      "expo-font",
+      "expo-localization",
+      "expo-asset",
+      "expo-secure-store",
+      "expo-sharing",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true

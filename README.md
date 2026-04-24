@@ -10,12 +10,19 @@ Track fuel logs, monitor maintenance schedules, get notified before things go ov
 
 - **Multi-vehicle garage** — scooter, manual motorcycle, car, or other
 - **Fuel logs** — log refuels, track average consumption (L/100km)
-- **Maintenance tracking** — per-vehicle schedule seeded automatically by vehicle type (engine oil, chain, tyres, etc.)
-- **Status badges** — overdue / due soon / all good at a glance
-- **Reminders** — two-stage push notifications (1000km/14 days early, 200km/3 days final)
+- **Maintenance tracking** — per-vehicle schedule seeded automatically by vehicle type; editable intervals, remarks, and next-due dates per item
+- **Two-action service logging** — "Save" (update item settings only) or "Log Service" (create a history entry)
+- **Service history** — last 5 service entries per maintenance item visible on the log screen
+- **Tyre pairing** — Front Tyre and Rear Tyre displayed side-by-side in compact cards
+- **Status badges** — overdue / due soon / urgent / all good, driven by user-configurable thresholds
+- **User-configurable reminder thresholds** — early warning (km + days) and final reminder (km + days) stored in `app_settings` and applied across the whole app
+- **Reminders** — two-stage push notifications (default: 1000 km / 14 days early, 200 km / 3 days final)
 - **Odometer tracking** — Manual Ride Session (tap Start/End) or Always Auto-track (background GPS)
+- **PDF export** — full vehicle report (vehicle info, fuel log, maintenance schedule) generated on-device via `expo-print` and shared as a PDF file
+- **Privacy policy modal** — in-app scrollable privacy policy accessible from Settings
 - **Animated UI** — Reanimated spring/timing animations throughout, animated splash screen, active ride glow on vehicle cards
 - **Fully offline** — SQLite on-device, no backend, no account
+- **Tutorial** *(planned)* — first-launch guided walkthrough of all major features
 
 ---
 
@@ -23,11 +30,12 @@ Track fuel logs, monitor maintenance schedules, get notified before things go ov
 
 | Layer | Library |
 |---|---|
-| Framework | Expo ~54, React Native 0.81.5 |
-| Navigation | Expo Router v4 (file-based) |
+| Framework | Expo ~55, React Native 0.83.4 |
+| Navigation | Expo Router v6 (file-based) |
 | Styling | NativeWind v4 (Tailwind CSS for RN) |
-| Animations | react-native-reanimated ~4.1.1 |
 | Database | expo-sqlite ~16 (sync API) |
+| PDF Generation | expo-print |
+| File Sharing | expo-sharing, expo-file-system |
 | GPS / Location | expo-location |
 | Background Tasks | expo-task-manager |
 | Notifications | expo-notifications |
@@ -43,30 +51,33 @@ app/
   (tabs)/
     index.tsx          # Home — garage overview, Start/End Ride button per vehicle card
     fuel.tsx           # Fuel logs
-    maintenance.tsx    # Maintenance schedule
-    settings.tsx       # App settings (includes Odometer Tracking section)
+    maintenance.tsx    # Maintenance schedule with filter pills and tyre pairing
+    settings.tsx       # App settings — tracking mode, reminder thresholds, export, privacy
   vehicle/
-    add.tsx            # Add vehicle (2-step flow, triggers tracking onboarding on first vehicle)
+    add.tsx            # Add vehicle (2-step flow, always triggers tracking onboarding)
     [id].tsx           # Edit / delete vehicle
-  fuel/add/[vehicleId].tsx
-  maintenance/log/[itemId].tsx
+  fuel/
+    add/[vehicleId].tsx
+  maintenance/
+    log/[itemId].tsx   # Log service / save item settings — two-action header
 
 src/
   components/
-    VehicleCard.tsx          # Vehicle card — includes Start/End Ride CTA + active glow state
-    RideSessionButton.tsx    # Start/End Ride button (rendered inside VehicleCard)
-    TrackingOnboardingModal.tsx  # 2-step first-vehicle tracking mode onboarding
-    AutoTrackBanner.tsx      # Banner shown when background location is revoked
-    MaintenanceItemCard.tsx
+    VehicleCard.tsx              # Vehicle card — Start/End Ride CTA + active glow state
+    RideSessionButton.tsx        # Start/End Ride button (rendered inside VehicleCard)
+    TrackingOnboardingModal.tsx  # 2-step tracking mode onboarding (shown on every vehicle add)
+    AutoTrackBanner.tsx          # Banner shown when background location is revoked
+    MaintenanceItemCard.tsx      # Standard + compact (tyre pair) variants
     ConfirmModal.tsx
+    DueStatusBadge.tsx
     ErrorBoundary.tsx
     AnimatedSplash.tsx
     icons.tsx
 
   db/
     client.ts          # SQLite singleton
-    migrations.ts      # Schema — 5 business tables + app_settings (V2)
-    seeds.ts           # Auto-seeds maintenance items by vehicle type
+    migrations.ts      # Schema — V1 core tables, V2 app_settings, V3 new maintenance items
+    seeds.ts           # Auto-seeds maintenance items by vehicle type on vehicle create
 
   hooks/
     useVehicles.ts
@@ -79,35 +90,105 @@ src/
     scheduler.ts
 
   repositories/
-    vehicleRepo.ts       # includes updateOdometer()
+    vehicleRepo.ts         # includes updateOdometer()
     fuelRepo.ts
-    maintenanceRepo.ts
+    maintenanceRepo.ts     # logService(), updateItem(), getHistory(), getByVehicle()
     reminderRepo.ts
 
   services/
-    trackingPreferences.ts     # SQLite read/write for tracking_mode + onboarding flag
+    trackingPreferences.ts     # SQLite read/write for tracking_mode, onboarding flag, reminder thresholds
     rideSession.ts             # Haversine distance calc + odometer update (pure, no UI)
     backgroundLocationTask.ts  # TaskManager.defineTask() — registered at bundle load via _layout.tsx import
 
   types/
-    index.ts
+    index.ts                   # Vehicle, FuelLog, MaintenanceItem, ServiceLogInput, StatusThresholds, etc.
 
   utils/
     consumption.ts
-    reminderCheck.ts
-    export.ts
-    flags.ts       # One-shot in-memory cross-screen prompts
+    reminderCheck.ts     # computeMaintenanceStatus() — accepts StatusThresholds, loadStatusThresholds()
+    export.ts            # exportAllDataAsPdf() — HTML → PDF via expo-print
+    flags.ts             # One-shot in-memory cross-screen prompts
     cn.ts
     logger.ts
 ```
 
 ---
 
+## Database Schema
+
+### Migration history
+
+| Version | Changes |
+|---|---|
+| V1 | Core tables: `vehicles`, `fuel_logs`, `maintenance_items`, `maintenance_logs`, `reminder_settings` |
+| V2 | `app_settings` key-value table (tracking mode, onboarding flag) |
+| V3 | Inserts Front Fork Servicing + Vehicle Wash into all existing vehicles |
+
+### app_settings keys
+
+| Key | Values | Description |
+|---|---|---|
+| `tracking_mode` | `manual` / `auto` | Current odometer tracking mode |
+| `onboarding_tracking_shown` | `true` | Whether tracking onboarding has been shown at least once |
+| `early_warning_km` | number (default: 1000) | km before due to trigger "due soon" status |
+| `early_warning_days` | number (default: 14) | days before due to trigger "due soon" status |
+| `final_reminder_km` | number (default: 200) | km before due to trigger "urgent" status |
+| `final_reminder_days` | number (default: 3) | days before due to trigger "urgent" status |
+| `auto_track_vehicle_id` | number | Vehicle ID currently assigned to auto-track mode |
+| `bg_last_lat` / `bg_last_lon` | float | Last known GPS coordinate (persists background task restarts) |
+
+---
+
+## Maintenance Screen — Architecture
+
+### Item status computation
+
+`computeMaintenanceStatus(item, currentOdometer, thresholds?)` in `src/utils/reminderCheck.ts`:
+
+- Accepts an optional `StatusThresholds` object `{ earlyKm, earlyDays, finalKm, finalDays }`
+- If not provided, `loadStatusThresholds()` reads live values from `app_settings` (with hardcoded fallbacks)
+- Status hierarchy: `overdue > urgent > due > ok`
+- Both km-based and date-based triggers are evaluated; the higher severity wins
+
+### Service log vs. save-only
+
+The `maintenance/log/[itemId].tsx` screen has two distinct actions:
+
+| Action | What it does |
+|---|---|
+| **Save** | Updates `maintenance_items` only (interval, next due date, remarks). No history entry created. |
+| **Log Service** | Inserts a row into `maintenance_logs` AND updates `maintenance_items` (recalculates next due based on current odometer + interval). |
+
+Both actions show a confirmation dialog before executing.
+
+### Tyre pairing
+
+When both `Front Tyre` and `Rear Tyre` exist in the same status section, `groupSectionItems()` in `maintenance.tsx` renders them side-by-side using compact card variants. If only one tyre exists in a section, it renders full-width.
+
+### Seeded items by vehicle type
+
+| Category | Scooter | Manual Bike | Car | Universal |
+|---|---|---|---|---|
+| Engine Oil | ✓ | ✓ | ✓ | |
+| Air Filter | ✓ | ✓ | ✓ | |
+| Spark Plug | ✓ | ✓ | ✓ | |
+| Brake Fluid | ✓ | ✓ | ✓ | |
+| Battery | ✓ | ✓ | ✓ | |
+| Coolant | ✓ | | ✓ | |
+| Chain Lubrication | | ✓ | | |
+| Chain Adjustment | | ✓ | | |
+| Chain Replacement | | ✓ | | |
+| Clutch Cable | | ✓ | | |
+| Front Tyre | ✓ | ✓ | ✓ | |
+| Rear Tyre | ✓ | ✓ | ✓ | |
+| Front Fork Servicing | | | | ✓ |
+| Vehicle Wash | | | | ✓ |
+
+---
+
 ## Odometer Tracking — Architecture
 
 ### How it works
-
-The app offers two odometer tracking modes, chosen by the user on first vehicle add:
 
 | Mode | How | Battery |
 |---|---|---|
@@ -116,20 +197,14 @@ The app offers two odometer tracking modes, chosen by the user on first vehicle 
 
 ### Tracking mode storage
 
-Mode and onboarding flag are stored in the `app_settings` SQLite table (migration V2):
-
-| Key | Values |
-|---|---|
-| `tracking_mode` | `'manual'` (default) or `'auto'` |
-| `onboarding_tracking_shown` | `'true'` |
+Mode and related preferences stored in the `app_settings` SQLite table (migration V2). See [app_settings keys](#app_settings-keys) above.
 
 ### What connects to what
 
 ```
 trackingPreferences.ts (SQLite app_settings)
-  ← read/written by: useTrackingMode.ts
+  ← read/written by: useTrackingMode.ts, settings.tsx
   ← read by: backgroundLocationTask.ts (verify mode is still 'auto' before accumulating)
-  ← read by: app/_layout.tsx (launch permission recheck)
 
 rideSession.ts (pure service — haversine + odometer update)
   ← uses: vehicleRepo.updateOdometer()
@@ -144,62 +219,96 @@ backgroundLocationTask.ts
 
 useRideSession.ts
   ← uses: rideSession.ts, expo-location watchPositionAsync
-  ← consumed by: RideSessionButton.tsx (rendered inside VehicleCard per vehicle)
+  ← consumed by: VehicleCard (via props from HomeScreen)
 
 useTrackingMode.ts
   ← uses: trackingPreferences.ts, expo-location permissions, expo-task-manager
-  ← consumed by: settings.tsx, TrackingOnboardingModal.tsx, app/_layout.tsx
-
-RideSessionButton.tsx
-  ← uses: useRideSession.ts
-  ← rendered by: VehicleCard.tsx (one button per card, Option A design)
-  ← visible only when mode = 'manual'
+  ← consumed by: settings.tsx, TrackingOnboardingModal.tsx
 
 TrackingOnboardingModal.tsx
-  ← uses: useTrackingMode.ts, trackingPreferences.ts
-  ← rendered by: app/(tabs)/index.tsx
-  ← triggered by: setMaintenancePromptPending-style flag after first vehicle save in vehicle/add.tsx
+  ← triggered by: setTrackingOnboardingPending() in vehicle/add.tsx on EVERY vehicle save
+  ← resets to Step 1 each time it opens (useEffect on visible prop)
+  ← after completion: maintenance prompt is shown if pending
 
 AutoTrackBanner.tsx
-  ← rendered by: app/(tabs)/index.tsx
-  ← shown when: useTrackingMode detects background permission was revoked on launch
-
-app/_layout.tsx
-  ← imports backgroundLocationTask.ts (side-effect registers task before navigation)
-  ← runs launch recheck: if saved mode = 'auto', verify permission + task still registered
-
-app/vehicle/add.tsx
-  ← after first vehicle save: set flag to show TrackingOnboardingModal on Home
+  ← shown when: useTrackingMode detects background permission revoked on launch
 ```
 
 ### Background task explained
 
-`backgroundLocationTask.ts` defines a named task that the OS calls every time the phone moves 10+ metres. When auto-track mode is enabled:
+`backgroundLocationTask.ts` defines a named task the OS calls every 10+ metres of movement. When auto-track is enabled:
 
 1. User rides. Phone GPS detects movement.
-2. OS wakes up the app's background task (even with screen off).
-3. The task calculates distance from last known coordinate (haversine formula).
-4. Distance is added to the vehicle's odometer in SQLite.
+2. OS wakes the app's background task (even with screen off).
+3. Task calculates distance from last known coordinate (haversine).
+4. Distance added to the vehicle's odometer in SQLite.
 5. Task sleeps until the next GPS update.
 
-The task must be defined at **module top-level** (not inside a component or hook). The OS may attempt to wake the task before React mounts. If the handler isn't registered yet, the update is silently dropped. Importing `backgroundLocationTask.ts` in `_layout.tsx` ensures registration happens the moment the JS bundle loads.
-
-### Expo managed workflow — important build notes
-
-- Background location requires `expo-location` and `expo-task-manager` added to dependencies
-- `app.json` must be updated with:
-  - `ios.infoPlist`: `NSLocationAlwaysAndWhenInUseUsageDescription`, `NSLocationAlwaysUsageDescription`, `NSLocationWhenInUseUsageDescription`
-  - `ios.infoPlist.UIBackgroundModes`: `["location"]`
-  - `android.permissions`: `["ACCESS_BACKGROUND_LOCATION"]`
-- These config changes require a **new EAS dev build** — `npx expo start --dev-client` alone is not enough
+The task must be defined at **module top-level** — not inside a component or hook. Importing `backgroundLocationTask.ts` in `_layout.tsx` ensures registration happens the moment the JS bundle loads.
 
 ### Permission flow
 
-**iOS:** Two separate OS dialogs. `requestForegroundPermissionsAsync()` first (grants "While Using"). Then `requestBackgroundPermissionsAsync()` separately (upgrades to "Always"). Cannot be batched.
+**iOS:** Two separate OS dialogs. `requestForegroundPermissionsAsync()` first, then `requestBackgroundPermissionsAsync()`.
 
-**Android 12+ hibernation:** Android may reset permissions if app isn't used for months. On every launch, re-check both permission status (`getBackgroundPermissionsAsync()`) AND task registration status (`TaskManager.isTaskRegisteredAsync()`). If permission is granted but task is not running, restart the task silently.
+**Android 12+ hibernation:** Permissions may be reset after months of non-use. On every launch: re-check permission status AND task registration. If permission is granted but task is not running, restart silently.
 
-**iOS silent revocation:** Apple can silently downgrade "Always Allow" after extended non-use. Detected on launch — fall back to Manual with `AutoTrackBanner.tsx`.
+**iOS silent revocation:** Apple can silently downgrade "Always Allow". Detected on launch — fall back to Manual with `AutoTrackBanner.tsx`.
+
+---
+
+## PDF Export
+
+`exportAllDataAsPdf(vehicleId, vehicleNickname)` in `src/utils/export.ts`:
+
+1. Fetches vehicle info, all fuel logs, all maintenance items and their full service histories concurrently
+2. Builds an HTML string with inline CSS (vehicle stats grid, fuel log table, maintenance schedule table)
+3. Calls `expo-print`'s `printToFileAsync({ html })` to generate a `.pdf` file
+4. Moves the file to `expo-file-system`'s cache directory with a dated filename
+5. Shares via `expo-sharing`'s native share sheet
+6. Deletes the temp file after sharing
+
+---
+
+## Settings Screen
+
+| Setting | Behaviour |
+|---|---|
+| Odometer Tracking | Card selector — Manual Ride Session vs Auto-track Always. Handles full permission flow. |
+| Push notifications | Toggle (Switch). Enables/disables scheduled reminders. |
+| Default early warning | Opens edit modal. Saves `early_warning_km` + `early_warning_days` to `app_settings`. Displayed as current values in sub-text. |
+| Default final reminder | Opens edit modal. Saves `final_reminder_km` + `final_reminder_days` to `app_settings`. |
+| Export data | Calls `exportAllDataAsPdf()`. Shows "Generating PDF…" while in progress. |
+| Privacy | Opens full in-app scrollable privacy policy modal. |
+| RideZen Pro | Coming Soon badge. |
+
+Reminder threshold changes take effect immediately on next maintenance list load (no app restart needed).
+
+---
+
+## Planned Features
+
+### First-Launch Tutorial
+
+A guided walkthrough shown once on first app open (before any vehicle is added), controlled by a `tutorial_shown` flag in `app_settings`.
+
+**Proposed format:** Full-screen swipeable slides (4–5 screens) with a "Skip" link on every slide.
+
+**Proposed slides:**
+
+| Slide | Title | Content |
+|---|---|---|
+| 1 | Welcome to RideZen | App overview — offline, private, no account needed |
+| 2 | My Garage | Multi-vehicle overview, odometer, maintenance status at a glance |
+| 3 | Odometer Tracking | Manual Ride Session vs Auto-track — when to use each |
+| 4 | Maintenance | Status badges, due soon / overdue, logging a service |
+| 5 | Fuel Log *(optional)* | Logging refuels, tracking L/100km and monthly spend |
+| Final | Let's add your first vehicle | CTA to `/vehicle/add`, Skip lands on empty home screen |
+
+**Behaviour:**
+- Skippable at any point via small "Skip for now" link
+- Swipeable left/right with dot indicator
+- After completion or skip: `tutorial_shown = true` in `app_settings`, never shown again
+- Runs before the "Add vehicle" flow, not inside it
 
 ---
 
@@ -216,18 +325,14 @@ The task must be defined at **module top-level** (not inside a component or hook
 
 Fonts: **Playfair Display** (headings) + **Inter** (body)
 
-### Vehicle card — Start/End Ride design
+### Maintenance status colours
 
-**Idle (Start Ride button):**
-- Full-width pill inside card, below stats row, height 44px
-- `backgroundColor: rgba(255,255,255,0.95)`, text color = card's own `cardColor`
-- Inter SemiBold 13px + route icon left
-
-**Active tracking (card glow):**
-- Border: `2.5px solid #22C55E`, opacity pulsing `0.55 ↔ 1.0`, 1400ms ease-in-out
-- Shadow: `shadowColor: #22C55E`, opacity pulsing `0.25 ↔ 0.65`, 1400ms
-- Live counter row: pulsing green dot + "LIVE" label + `+X.X km` (Inter SemiBold 17px, `#22C55E`)
-- End Ride button: `backgroundColor: #E53E3E`, white text, spring entrance from scale 0.85
+| Status | Colour |
+|---|---|
+| overdue | `#CC0000` |
+| urgent | `#B45309` |
+| due | `#C45E0A` |
+| ok | `#1B6CA8` |
 
 ---
 
@@ -235,33 +340,49 @@ Fonts: **Playfair Display** (headings) + **Inter** (body)
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20 (pinned via Volta — `volta pin node@20` in project root)
 - Expo CLI (`npm install -g expo`)
-- Android Studio + Android SDK (for Android builds)
-- EAS CLI (`npm install -g eas-cli`) — required for cloud builds on Windows
+- EAS CLI (`npm install -g eas-cli`)
+- Android Studio + Android SDK (for local emulator)
+- Visual C++ 2015–2022 Redistributable x64 (Windows — required for `lightningcss` native binary)
+
+### Environment setup (Windows)
+
+Add to `~/.bashrc`:
+
+```bash
+export JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"
+export ANDROID_HOME="/c/Users/<you>/AppData/Local/Android/Sdk"
+```
+
+After every `npx expo prebuild --clean`, recreate `android/local.properties`:
+
+```
+sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
+```
 
 ### Install
 
 ```bash
-npm install --legacy-peer-deps
+npm install
 ```
 
-### Run (requires a dev build — Expo Go is not supported)
+### Run on emulator (day-to-day development)
 
-First-time setup: build the dev client APK via EAS:
+Start Android Studio emulator, then:
 
 ```bash
-eas build --profile development --platform android
+npx expo start
+# press 'a' to open on Android emulator
 ```
 
-Once the APK is installed on your device:
+> Only run `npx expo run:android` when native config changes (new native modules, `app.json` plugin changes). Metro hot-reload handles all JS/TS changes.
+
+### First-time or after native config changes
 
 ```bash
-npx expo start --dev-client
+npx expo run:android
 ```
-
-> **Windows users:** This project's native dependencies exceed the 260-character MAX_PATH limit.
-> Use EAS cloud builds instead of `npx expo run:android`.
 
 ---
 
@@ -275,8 +396,9 @@ eas build --profile production --platform android
 
 ## Notes
 
-- All data is stored locally in SQLite — uninstalling the app deletes all data
-- Maintenance items are auto-seeded when a vehicle is created, based on its type
-- `src/utils/flags.ts` handles one-shot cross-screen prompts (maintenance setup prompt, tracking onboarding trigger)
-- Background location tracking requires a fresh EAS dev build after `app.json` permission entries are added
-- GPS distance accuracy vs. wheel odometer: ~2-5% drift per trip using `Accuracy.Balanced` — acceptable for maintenance interval tracking
+- All data is stored locally in SQLite — uninstalling the app deletes everything permanently
+- Maintenance items are auto-seeded on vehicle create (`src/db/seeds.ts`) based on vehicle type
+- `src/utils/flags.ts` handles one-shot cross-screen prompts (maintenance setup prompt, tracking onboarding)
+- Reminder threshold changes in Settings take effect on the next maintenance list load
+- GPS accuracy vs. wheel odometer: ~2–5% drift per trip using `Accuracy.Balanced` — acceptable for maintenance interval tracking
+- Background location requires a fresh EAS dev build after `app.json` permission entries are added

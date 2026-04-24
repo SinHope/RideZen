@@ -3,7 +3,7 @@
 // Step 2: Combined explanation + privacy notice.
 // Only shown once — guarded by 'onboarding_tracking_shown' in app_settings.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -31,6 +31,10 @@ export function TrackingOnboardingModal({ visible, vehicleId, onComplete }: Prop
   const [step, setStep] = useState<1 | 2>(1);
   const [selected, setSelected] = useState<SelectedMode>('manual');
   const { switchToAuto } = useTrackingMode();
+
+  useEffect(() => {
+    if (visible) { setStep(1); setSelected('manual'); }
+  }, [visible]);
 
   const handleComplete = async () => {
     setOnboardingShown();

@@ -1,14 +1,41 @@
-// settings.tsx
-
-import { useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Switch, Alert, Linking } from 'react-native';
+import { useState, useCallback, useEffect } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, Switch, Alert, Linking,
+  Modal, TextInput, KeyboardAvoidingView, Platform,
+} from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BellIcon, ZapIcon, ShieldIcon, DownloadIcon, StarIcon, ChevronRightIcon, NavigationIcon, PlayIcon } from '@/components/icons';
-import { exportFuelLogs } from '@/utils/export';
+import { exportAllDataAsPdf } from '@/utils/export';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useTrackingMode, SwitchToAutoOutcome } from '@/hooks/useTrackingMode';
 import { getTrackingMode } from '@/services/trackingPreferences';
+import { getDb } from '@/db/client';
+
+// ── app_settings helpers ──────────────────────────────────────────────────────
+
+function getAppSetting(key: string, fallback: string): string {
+  try {
+    const db = getDb();
+    const row = db.getFirstSync<{ value: string }>('SELECT value FROM app_settings WHERE key = ?', [key]);
+    return row?.value ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function setAppSetting(key: string, value: string): void {
+  try {
+    const db = getDb();
+    db.runSync(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      [key, value]
+    );
+  } catch {}
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 interface SettingsRowProps {
   icon: React.ReactNode;
@@ -59,7 +86,165 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Odometer tracking mode selector
+// ── Reminder Edit Modal ───────────────────────────────────────────────────────
+
+interface ReminderEditModalProps {
+  visible: boolean;
+  title: string;
+  kmKey: string;
+  daysKey: string;
+  defaultKm: string;
+  defaultDays: string;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function ReminderEditModal({ visible, title, kmKey, daysKey, defaultKm, defaultDays, onClose, onSaved }: ReminderEditModalProps) {
+  const [km, setKm] = useState('');
+  const [days, setDays] = useState('');
+
+  useEffect(() => {
+    if (visible) {
+      setKm(getAppSetting(kmKey, defaultKm));
+      setDays(getAppSetting(daysKey, defaultDays));
+    }
+  }, [visible]);
+
+  const handleSave = () => {
+    const kmVal = parseFloat(km);
+    const daysVal = parseInt(days, 10);
+    if (km && (isNaN(kmVal) || kmVal <= 0)) {
+      Alert.alert('Invalid', 'Enter a valid km value.'); return;
+    }
+    if (days && (isNaN(daysVal) || daysVal <= 0)) {
+      Alert.alert('Invalid', 'Enter a valid number of days.'); return;
+    }
+    if (km) setAppSetting(kmKey, String(kmVal));
+    if (days) setAppSetting(daysKey, String(daysVal));
+    onSaved();
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.45)' }}
+      >
+        <View style={{ width: '88%', backgroundColor: 'white', borderRadius: 20, padding: 22 }}>
+          <Text style={{ fontFamily: 'Playfair Display_500Medium', fontSize: 18, color: '#0D3B5E', marginBottom: 16 }}>
+            {title}
+          </Text>
+
+          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 11, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>
+            km before due
+          </Text>
+          <View style={{ borderWidth: 1, borderColor: 'rgba(27,108,168,0.15)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 14 }}>
+            <TextInput
+              value={km}
+              onChangeText={setKm}
+              placeholder={defaultKm}
+              placeholderTextColor="#9CA3AF"
+              keyboardType="numeric"
+              style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#111827' }}
+              accessibilityLabel="km before due"
+            />
+          </View>
+
+          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 11, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>
+            days before due
+          </Text>
+          <View style={{ borderWidth: 1, borderColor: 'rgba(27,108,168,0.15)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 20 }}>
+            <TextInput
+              value={days}
+              onChangeText={setDays}
+              placeholder={defaultDays}
+              placeholderTextColor="#9CA3AF"
+              keyboardType="numeric"
+              style={{ fontFamily: 'Inter_400Regular', fontSize: 14, color: '#111827' }}
+              accessibilityLabel="days before due"
+            />
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={{ flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: 'rgba(27,108,168,0.20)', alignItems: 'center' }}
+            >
+              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#6B7280' }}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSave}
+              style={{ flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#1B6CA8', alignItems: 'center' }}
+            >
+              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: 'white' }}>Save</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ── Privacy Modal ─────────────────────────────────────────────────────────────
+
+function PrivacyModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+        <View style={{ paddingTop: insets.top + 8, paddingBottom: 16, paddingHorizontal: 20, backgroundColor: '#0D3B5E' }}>
+          <TouchableOpacity onPress={onClose} style={{ marginBottom: 8 }}>
+            <Text style={{ color: 'rgba(255,255,255,0.75)', fontFamily: 'Inter_400Regular', fontSize: 13 }}>← Close</Text>
+          </TouchableOpacity>
+          <Text style={{ fontFamily: 'Playfair Display_500Medium', fontSize: 22, color: 'white' }}>Privacy Policy</Text>
+          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 2 }}>Last updated: April 2025</Text>
+        </View>
+
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+          {[
+            {
+              title: 'Your data stays on your device',
+              body: 'RideZen stores all your vehicle data — odometer readings, fuel logs, and maintenance records — locally on your device using SQLite. No data is sent to any server, cloud service, or third party.',
+            },
+            {
+              title: 'Location data',
+              body: 'If you enable Auto-track mode, RideZen requests background location permission to track ride distance. Location data is used solely to calculate distance and update your odometer. It is never stored beyond the current ride session and is never transmitted off your device.',
+            },
+            {
+              title: 'No accounts required',
+              body: 'RideZen does not require you to create an account, provide an email address, or log in. The app functions entirely without internet access.',
+            },
+            {
+              title: 'No analytics or tracking',
+              body: 'RideZen does not include any analytics SDKs, crash reporters that phone home, or advertising frameworks. Your usage of the app is not monitored or recorded.',
+            },
+            {
+              title: 'Export and backup',
+              body: 'The Export Data feature generates a PDF report of your data on-device. The file is only shared when you explicitly tap Share — it is not uploaded anywhere automatically.',
+            },
+            {
+              title: 'Data deletion',
+              body: 'Uninstalling the app removes all your data permanently. There is no account to delete and no server-side data to request removal of.',
+            },
+            {
+              title: 'Contact',
+              body: 'If you have questions about privacy, contact us at nasmerfontanilla@gmail.com.',
+            },
+          ].map(({ title, body }) => (
+            <View key={title} style={{ marginBottom: 20 }}>
+              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: '#0D3B5E', marginBottom: 6 }}>{title}</Text>
+              <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#4B5563', lineHeight: 20 }}>{body}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Tracking Mode Selector ────────────────────────────────────────────────────
+
 function TrackingModeSelector() {
   const { vehicles } = useVehicles();
   const { switchToAuto, switchToManual } = useTrackingMode();
@@ -118,7 +303,6 @@ function TrackingModeSelector() {
 
   return (
     <View style={{ gap: 8 }}>
-      {/* Manual option */}
       <TouchableOpacity
         onPress={currentMode !== 'manual' && !switching ? handleSwitchToManual : undefined}
         style={{
@@ -155,7 +339,6 @@ function TrackingModeSelector() {
         )}
       </TouchableOpacity>
 
-      {/* Auto option */}
       <TouchableOpacity
         onPress={currentMode !== 'auto' && !switching ? handleSwitchToAuto : undefined}
         style={{
@@ -197,18 +380,41 @@ function TrackingModeSelector() {
   );
 }
 
+// ── Main Screen ───────────────────────────────────────────────────────────────
+
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { vehicles } = useVehicles();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [showEarlyModal, setShowEarlyModal] = useState(false);
+  const [showFinalModal, setShowFinalModal] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const [earlyKm, setEarlyKm] = useState('1000');
+  const [earlyDays, setEarlyDays] = useState('14');
+  const [finalKm, setFinalKm] = useState('200');
+  const [finalDays, setFinalDays] = useState('3');
+
+  const loadReminderSettings = useCallback(() => {
+    setEarlyKm(getAppSetting('early_warning_km', '1000'));
+    setEarlyDays(getAppSetting('early_warning_days', '14'));
+    setFinalKm(getAppSetting('final_reminder_km', '200'));
+    setFinalDays(getAppSetting('final_reminder_days', '3'));
+  }, []);
+
+  useFocusEffect(loadReminderSettings);
 
   const handleExport = async () => {
     const v = vehicles[0];
     if (!v) { Alert.alert('No vehicle', 'Add a vehicle first.'); return; }
+    setExporting(true);
     try {
-      await exportFuelLogs(v.id, v.nickname);
+      await exportAllDataAsPdf(v.id, v.nickname);
     } catch (e: any) {
       Alert.alert('Export failed', e.message);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -230,7 +436,6 @@ export default function SettingsScreen() {
         <Text className="text-xs text-white/70 font-inter">Account</Text>
         <Text className="text-2xl text-white font-playfair-medium">Settings</Text>
 
-        {/* Profile row */}
         <View className="flex-row items-center gap-3 mt-3">
           <View className="w-12 h-12 rounded-full bg-white/20 items-center justify-center">
             <Text className="text-white text-lg font-playfair">N</Text>
@@ -280,15 +485,15 @@ export default function SettingsScreen() {
             icon={<StarIcon color="#2D6A4F" size={15} />}
             iconBg="bg-[#D6F0E2]"
             name="Default early warning"
-            sub="1,000 km · 14 days before"
-            onPress={() => {}}
+            sub={`${parseInt(earlyKm).toLocaleString()} km · ${earlyDays} days before`}
+            onPress={() => setShowEarlyModal(true)}
           />
           <SettingsRow
             icon={<ZapIcon color="#F4A035" size={15} />}
             iconBg="bg-[#FEF3C7]"
             name="Default final reminder"
-            sub="200 km · 3 days before"
-            onPress={() => {}}
+            sub={`${parseInt(finalKm).toLocaleString()} km · ${finalDays} days before`}
+            onPress={() => setShowFinalModal(true)}
           />
         </SettingsGroup>
 
@@ -299,26 +504,23 @@ export default function SettingsScreen() {
             icon={<DownloadIcon color="#1B6CA8" size={15} />}
             iconBg="bg-zen-primary-pale"
             name="Export data"
-            sub="CSV or JSON backup"
-            onPress={handleExport}
+            sub={exporting ? 'Generating PDF…' : 'PDF report of all your data'}
+            onPress={exporting ? undefined : handleExport}
           />
           <SettingsRow
             icon={<ShieldIcon color="#2D6A4F" size={15} />}
             iconBg="bg-[#D6F0E2]"
             name="Privacy"
             sub="All data stored locally on device"
-            onPress={() => {}}
+            onPress={() => setShowPrivacy(true)}
           />
         </SettingsGroup>
 
         {/* Upgrade */}
         <GroupLabel>Upgrade</GroupLabel>
         <SettingsGroup>
-          <View className="flex-row items-center gap-3 px-3.5 py-3 bg-gradient-to-r from-zen-primary/5 to-zen-primary-light/5">
-            <View
-              className="w-8 h-8 rounded-lg items-center justify-center"
-              style={{ backgroundColor: '#1B6CA8' }}
-            >
+          <View className="flex-row items-center gap-3 px-3.5 py-3">
+            <View className="w-8 h-8 rounded-lg items-center justify-center" style={{ backgroundColor: '#1B6CA8' }}>
               <StarIcon color="white" size={15} />
             </View>
             <View className="flex-1">
@@ -326,16 +528,39 @@ export default function SettingsScreen() {
               <Text className="text-xs text-zen-muted font-inter mt-0.5">Cloud sync, multi-device, backup</Text>
             </View>
             <View className="bg-zen-gold px-2.5 py-1 rounded-lg">
-              <Text className="text-white text-[10px] font-inter-semibold">Soon</Text>
+              <Text className="text-white text-[10px] font-inter-semibold">Coming Soon</Text>
             </View>
           </View>
         </SettingsGroup>
 
-        {/* Footer */}
         <Text className="text-center text-xs text-zen-muted font-inter mt-4">
           RideZen v1.0.0 · TulusNas Software Studio
         </Text>
       </ScrollView>
+
+      <ReminderEditModal
+        visible={showEarlyModal}
+        title="Default Early Warning"
+        kmKey="early_warning_km"
+        daysKey="early_warning_days"
+        defaultKm="1000"
+        defaultDays="14"
+        onClose={() => setShowEarlyModal(false)}
+        onSaved={loadReminderSettings}
+      />
+
+      <ReminderEditModal
+        visible={showFinalModal}
+        title="Default Final Reminder"
+        kmKey="final_reminder_km"
+        daysKey="final_reminder_days"
+        defaultKm="200"
+        defaultDays="3"
+        onClose={() => setShowFinalModal(false)}
+        onSaved={loadReminderSettings}
+      />
+
+      <PrivacyModal visible={showPrivacy} onClose={() => setShowPrivacy(false)} />
     </View>
   );
 }

@@ -7,6 +7,7 @@ import { WrenchIcon, ClockIcon, AlertCircleIcon, CheckIcon } from './icons';
 interface Props {
   item: MaintenanceItem;
   onPress?: () => void;
+  compact?: boolean;
 }
 
 function getItemIcon(category: string, status: MaintenanceItem['status']) {
@@ -22,7 +23,6 @@ function getItemIcon(category: string, status: MaintenanceItem['status']) {
     status === 'due' ? 'bg-zen-warn-bg' :
     'bg-zen-primary-pale';
 
-  // Pick icon based on category
   let IconComp = WrenchIcon;
   if (category.toLowerCase().includes('oil') || category.toLowerCase().includes('fluid')) {
     IconComp = AlertCircleIcon;
@@ -37,24 +37,43 @@ function getItemIcon(category: string, status: MaintenanceItem['status']) {
 
 function formatRemaining(item: MaintenanceItem): string {
   if (item.status === 'overdue') {
-    if (item.km_remaining != null && item.km_remaining < 0) {
+    if (item.km_remaining != null && item.km_remaining < 0)
       return `${Math.abs(Math.round(item.km_remaining)).toLocaleString()} km overdue`;
-    }
-    if (item.days_remaining != null && item.days_remaining < 0) {
+    if (item.days_remaining != null && item.days_remaining < 0)
       return `${Math.abs(item.days_remaining)} days overdue`;
-    }
     return 'Overdue';
   }
-  if (item.km_remaining != null && item.next_due_odo != null) {
+  if (item.km_remaining != null && item.next_due_odo != null)
     return `Due at ${Math.round(item.next_due_odo).toLocaleString()} km · ${Math.round(item.km_remaining).toLocaleString()} km left`;
-  }
-  if (item.days_remaining != null && item.next_due_date != null) {
+  if (item.days_remaining != null && item.next_due_date != null)
     return `Due ${item.next_due_date} · ${item.days_remaining} days left`;
-  }
   return 'No schedule set';
 }
 
-export const MaintenanceItemCard = React.memo(function MaintenanceItemCard({ item, onPress }: Props) {
+function formatRemainingCompact(item: MaintenanceItem): string {
+  if (item.status === 'overdue') {
+    if (item.km_remaining != null && item.km_remaining < 0)
+      return `${Math.abs(Math.round(item.km_remaining)).toLocaleString()} km over`;
+    if (item.days_remaining != null && item.days_remaining < 0)
+      return `${Math.abs(item.days_remaining)}d over`;
+    return 'Overdue';
+  }
+  if (item.km_remaining != null)
+    return `${Math.round(item.km_remaining).toLocaleString()} km left`;
+  if (item.days_remaining != null)
+    return `${item.days_remaining} days left`;
+  return 'No schedule';
+}
+
+const cardShadow = {
+  shadowColor: '#1B6CA8',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.05,
+  shadowRadius: 4,
+  elevation: 1,
+};
+
+export const MaintenanceItemCard = React.memo(function MaintenanceItemCard({ item, onPress, compact }: Props) {
   const status = item.status ?? 'ok';
   const { color, bgClass, IconComp } = getItemIcon(item.category, status);
   const progressPct = item.progress_pct ?? 0;
@@ -65,33 +84,52 @@ export const MaintenanceItemCard = React.memo(function MaintenanceItemCard({ ite
     status === 'due' ? '#F4A035' :
     '#74C69D';
 
+  if (compact) {
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        className="bg-zen-surface rounded-2xl p-3 mb-2 border border-zen-primary/[0.07]"
+        style={cardShadow}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.category} — ${status}`}
+        activeOpacity={0.85}
+      >
+        <View className="flex-row items-center justify-between mb-1">
+          <Text className="text-xs font-inter-medium text-zen-text flex-1 mr-1" numberOfLines={1}>
+            {item.category}
+          </Text>
+          <DueStatusBadge status={status} />
+        </View>
+        <Text className="text-xs text-zen-muted font-inter mb-1.5" numberOfLines={1}>
+          {formatRemainingCompact(item)}
+        </Text>
+        <View className="h-1 bg-gray-100 rounded-full overflow-hidden">
+          <View
+            className="h-full rounded-full"
+            style={{ width: `${Math.min(progressPct, 100)}%`, backgroundColor: progressColor }}
+          />
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
   return (
     <TouchableOpacity
       onPress={onPress}
       className="bg-zen-surface rounded-2xl p-3.5 mb-2 border border-zen-primary/[0.07] flex-row items-center gap-3"
-      style={{
-        shadowColor: '#1B6CA8',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 1,
-      }}
+      style={cardShadow}
       accessibilityRole="button"
       accessibilityLabel={`${item.category} — ${status}`}
       activeOpacity={0.85}
     >
-      {/* Icon */}
       <View className={`w-10 h-10 rounded-xl items-center justify-center ${bgClass} flex-shrink-0`}>
         <IconComp color={color} size={18} />
       </View>
-
-      {/* Info */}
       <View className="flex-1 min-w-0">
         <Text className="text-sm font-inter-medium text-zen-text" numberOfLines={1}>{item.category}</Text>
         <Text className="text-xs text-zen-muted font-inter mt-0.5" numberOfLines={1}>
           {formatRemaining(item)}
         </Text>
-        {/* Progress bar */}
         <View className="h-1 bg-gray-100 rounded-full mt-1.5 overflow-hidden">
           <View
             className="h-full rounded-full"
@@ -99,8 +137,6 @@ export const MaintenanceItemCard = React.memo(function MaintenanceItemCard({ ite
           />
         </View>
       </View>
-
-      {/* Badge */}
       <View className="flex-shrink-0">
         <DueStatusBadge status={status} />
       </View>

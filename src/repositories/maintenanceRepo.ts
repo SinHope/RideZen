@@ -1,6 +1,6 @@
 import { getDb } from '@/db/client';
 import { MaintenanceItem, MaintenanceLog, ServiceLogInput, Result, MaintenanceStatus } from '@/types';
-import { computeMaintenanceStatus } from '@/utils/reminderCheck';
+import { computeMaintenanceStatus, loadStatusThresholds } from '@/utils/reminderCheck';
 import { logToFile } from '@/utils/logger';
 
 export const maintenanceRepo = {
@@ -12,8 +12,8 @@ export const maintenanceRepo = {
         [vehicleId]
       );
 
-      // Compute status for each item
-      const enriched = rows.map(item => computeMaintenanceStatus(item, currentOdometer));
+      const thresholds = loadStatusThresholds();
+      const enriched = rows.map(item => computeMaintenanceStatus(item, currentOdometer, thresholds));
       return { data: enriched, error: null };
     } catch (e) {
       logToFile('DB_ERROR', 'maintenanceRepo.getByVehicle', String(e));
@@ -50,13 +50,14 @@ export const maintenanceRepo = {
 
       // Calculate next due
       const nextDueOdo = odometer && intervalKm ? odometer + intervalKm : item.next_due_odo;
-      const nextDueDate = intervalDays
-        ? (() => {
-            const d = new Date(today);
-            d.setDate(d.getDate() + intervalDays);
-            return d.toISOString().split('T')[0];
-          })()
-        : item.next_due_date;
+      const nextDueDate = input.new_due_date
+        ?? (intervalDays
+            ? (() => {
+                const d = new Date(today);
+                d.setDate(d.getDate() + intervalDays);
+                return d.toISOString().split('T')[0];
+              })()
+            : item.next_due_date);
 
       // Insert log
       db.runSync(
@@ -81,7 +82,7 @@ export const maintenanceRepo = {
          WHERE id = ?`,
         [today, odometer ?? null, nextDueDate, nextDueOdo,
          intervalKm ?? null, intervalDays ?? null,
-         input.notes ?? item.notes, new Date().toISOString(),
+         input.remarks ?? item.notes, new Date().toISOString(),
          input.item_id]
       );
 

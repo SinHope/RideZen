@@ -6,3 +6,12 @@ expo-env.d.ts
 # @end expo-cli
 
 node_modules/
+.expo/
+dist/
+.DS_Store
+*.jks
+*.keystore
+coverage/
+.env
+.env.local
+.env.*.local

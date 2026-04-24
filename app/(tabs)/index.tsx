@@ -128,6 +128,7 @@ export default function HomeScreen() {
   const [searchVisible, setSearchVisible] = useState(false);
   const [showMaintenancePrompt, setShowMaintenancePrompt] = useState(false);
   const [showTrackingOnboarding, setShowTrackingOnboarding] = useState(false);
+  const pendingMaintenanceAfterOnboarding = useRef(false);
   const [trackingMode, setTrackingModeState] = useState<'manual' | 'auto'>('manual');
   const [banner, setBanner] = useState<{ message: string; showSettingsLink: boolean } | null>(null);
 
@@ -139,15 +140,18 @@ export default function HomeScreen() {
     reload();
     // Reload tracking mode from SQLite (may have changed in Settings)
     setTrackingModeState(getTrackingMode());
-    // Maintenance prompt (existing flow)
-    setTimeout(() => {
+    const hasOnboarding = consumeTrackingOnboardingPending();
+    if (hasOnboarding) {
       if (consumeMaintenancePromptPending()) {
-        setShowMaintenancePrompt(true);
+        pendingMaintenanceAfterOnboarding.current = true;
       }
-    }, 1200);
-    // Tracking onboarding (new flow — first vehicle only)
-    if (consumeTrackingOnboardingPending()) {
       setShowTrackingOnboarding(true);
+    } else {
+      setTimeout(() => {
+        if (consumeMaintenancePromptPending()) {
+          setShowMaintenancePrompt(true);
+        }
+      }, 1200);
     }
   }, []));
 
@@ -369,6 +373,10 @@ export default function HomeScreen() {
           setShowTrackingOnboarding(false);
           setTrackingModeState(getTrackingMode());
           Alert.alert('', 'You can change your tracking mode anytime in Settings.', [{ text: 'Got it' }]);
+          if (pendingMaintenanceAfterOnboarding.current) {
+            pendingMaintenanceAfterOnboarding.current = false;
+            setTimeout(() => setShowMaintenancePrompt(true), 600);
+          }
         }}
       />
     </View>

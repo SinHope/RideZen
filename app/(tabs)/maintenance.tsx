@@ -9,6 +9,34 @@ import { MaintenanceItem } from '@/types';
 
 type FilterType = 'all' | 'overdue' | 'due' | 'urgent' | 'ok';
 
+type GroupedItem =
+  | { type: 'single'; item: MaintenanceItem }
+  | { type: 'pair'; items: [MaintenanceItem, MaintenanceItem] };
+
+function groupSectionItems(items: MaintenanceItem[]): GroupedItem[] {
+  const frontTyre = items.find(i => i.category === 'Front Tyre');
+  const rearTyre = items.find(i => i.category === 'Rear Tyre');
+  const result: GroupedItem[] = [];
+  let tyreHandled = false;
+
+  for (const item of items) {
+    if (item.category === 'Front Tyre' || item.category === 'Rear Tyre') {
+      if (!tyreHandled) {
+        if (frontTyre && rearTyre) {
+          result.push({ type: 'pair', items: [frontTyre, rearTyre] });
+        } else {
+          result.push({ type: 'single', item });
+        }
+        tyreHandled = true;
+      }
+    } else {
+      result.push({ type: 'single', item });
+    }
+  }
+
+  return result;
+}
+
 const FILTERS: { key: FilterType; label: string }[] = [
   { key: 'all', label: 'All items' },
   { key: 'overdue', label: 'Overdue' },
@@ -161,13 +189,35 @@ export default function MaintenanceScreen() {
           {sections.map(section => (
             <View key={section.title}>
               {section.title ? <SectionHeader title={section.title} /> : null}
-              {section.data.map(item => (
-                <MaintenanceItemCard
-                  key={item.id}
-                  item={item}
-                  onPress={() => router.push(`/maintenance/log/${item.id}`)}
-                />
-              ))}
+              {groupSectionItems(section.data).map((grouped, idx) => {
+                if (grouped.type === 'pair') {
+                  return (
+                    <View key={`${section.title}-tyre-pair`} className="flex-row gap-2">
+                      <View className="flex-1">
+                        <MaintenanceItemCard
+                          item={grouped.items[0]}
+                          onPress={() => router.push(`/maintenance/log/${grouped.items[0].id}`)}
+                          compact
+                        />
+                      </View>
+                      <View className="flex-1">
+                        <MaintenanceItemCard
+                          item={grouped.items[1]}
+                          onPress={() => router.push(`/maintenance/log/${grouped.items[1].id}`)}
+                          compact
+                        />
+                      </View>
+                    </View>
+                  );
+                }
+                return (
+                  <MaintenanceItemCard
+                    key={grouped.item.id}
+                    item={grouped.item}
+                    onPress={() => router.push(`/maintenance/log/${grouped.item.id}`)}
+                  />
+                );
+              })}
             </View>
           ))}
         </ScrollView>

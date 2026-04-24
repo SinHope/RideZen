@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { logToFile } from '@/utils/logger';
 
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {
   try {
@@ -13,6 +13,9 @@ export async function runMigrations(db: SQLiteDatabase): Promise<void> {
     }
     if (currentVersion < 2) {
       migrateV2(db);
+    }
+    if (currentVersion < 3) {
+      migrateV3(db);
     }
 
     db.execSync(`PRAGMA user_version = ${CURRENT_VERSION}`);
@@ -116,4 +119,61 @@ function migrateV2(db: SQLiteDatabase): void {
       updated_at TEXT DEFAULT (datetime('now'))
     );
   `);
+}
+
+function migrateV3(db: SQLiteDatabase): void {
+  const today = new Date().toISOString().split('T')[0];
+  const vehicles = db.getAllSync<{ id: number; current_odometer: number }>(
+    'SELECT id, current_odometer FROM vehicles'
+  );
+
+  const newItems = [
+    {
+      category: 'Front Fork Servicing',
+      interval_km: 24000,
+      interval_days: 360,
+      early_km: 3000, early_days: 30,
+      final_km: 500,  final_days: 7,
+    },
+    {
+      category: 'Vehicle Wash',
+      interval_km: null,
+      interval_days: null,
+      early_km: null, early_days: null,
+      final_km: null, final_days: null,
+    },
+  ];
+
+  for (const vehicle of vehicles) {
+    for (const item of newItems) {
+      const exists = db.getFirstSync(
+        'SELECT id FROM maintenance_items WHERE vehicle_id = ? AND category = ?',
+        [vehicle.id, item.category]
+      );
+      if (exists) continue;
+
+      const nextDueOdo = item.interval_km ? vehicle.current_odometer + item.interval_km : null;
+      const nextDueDate = item.interval_days
+        ? (() => {
+            const d = new Date();
+            d.setDate(d.getDate() + item.interval_days!);
+            return d.toISOString().split('T')[0];
+          })()
+        : null;
+
+      const result = db.runSync(
+        `INSERT INTO maintenance_items
+         (vehicle_id, category, vehicle_type_scope, interval_km, interval_days, next_due_odo, next_due_date, updated_at)
+         VALUES (?, ?, 'universal', ?, ?, ?, ?, ?)`,
+        [vehicle.id, item.category, item.interval_km, item.interval_days, nextDueOdo, nextDueDate, today]
+      );
+
+      db.runSync(
+        `INSERT INTO reminder_settings
+         (item_id, early_km_before, early_days_before, early_enabled, final_km_before, final_days_before, final_enabled)
+         VALUES (?, ?, ?, 1, ?, ?, 1)`,
+        [result.lastInsertRowId, item.early_km, item.early_days, item.final_km, item.final_days]
+      );
+    }
+  }
 }

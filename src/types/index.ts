@@ -110,6 +110,8 @@ export interface ServiceLogInput {
   notes?: string;
   new_interval_km?: number;
   new_interval_days?: number;
+  new_due_date?: string;
+  remarks?: string;
 }
 
 // ─── Reminder Settings ────────────────────────────────────────────────────────

@@ -1,15 +1,48 @@
 import { MaintenanceItem, MaintenanceStatus, ReminderSettings } from '@/types';
 
-/**
- * Compute the maintenance status and remaining km/days for an item.
- * Status hierarchy: overdue > urgent > due > ok
- */
+export interface StatusThresholds {
+  earlyKm: number;
+  earlyDays: number;
+  finalKm: number;
+  finalDays: number;
+}
+
+export const DEFAULT_THRESHOLDS: StatusThresholds = {
+  earlyKm: 1000,
+  earlyDays: 14,
+  finalKm: 200,
+  finalDays: 3,
+};
+
+export function loadStatusThresholds(): StatusThresholds {
+  try {
+    // Dynamic import avoided — use a lazy require so this file stays free of DB deps
+    const { getDb } = require('@/db/client');
+    const db = getDb();
+    const get = (key: string, fallback: number) => {
+      const row = db.getFirstSync<{ value: string }>('SELECT value FROM app_settings WHERE key = ?', [key]);
+      const n = row ? parseFloat(row.value) : NaN;
+      return isNaN(n) || n <= 0 ? fallback : n;
+    };
+    return {
+      earlyKm: get('early_warning_km', DEFAULT_THRESHOLDS.earlyKm),
+      earlyDays: get('early_warning_days', DEFAULT_THRESHOLDS.earlyDays),
+      finalKm: get('final_reminder_km', DEFAULT_THRESHOLDS.finalKm),
+      finalDays: get('final_reminder_days', DEFAULT_THRESHOLDS.finalDays),
+    };
+  } catch {
+    return { ...DEFAULT_THRESHOLDS };
+  }
+}
+
 export function computeMaintenanceStatus(
   item: MaintenanceItem,
-  currentOdometer: number
+  currentOdometer: number,
+  thresholds: StatusThresholds = DEFAULT_THRESHOLDS
 ): MaintenanceItem {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const { earlyKm, earlyDays, finalKm, finalDays } = thresholds;
 
   let status: MaintenanceStatus = 'ok';
   let kmRemaining: number | undefined;
@@ -24,9 +57,9 @@ export function computeMaintenanceStatus(
 
     if (kmRemaining <= 0) {
       status = 'overdue';
-    } else if (kmRemaining <= 200) {
+    } else if (kmRemaining <= finalKm) {
       status = statusMax(status, 'urgent');
-    } else if (kmRemaining <= 1000) {
+    } else if (kmRemaining <= earlyKm) {
       status = statusMax(status, 'due');
     }
   }
@@ -45,9 +78,9 @@ export function computeMaintenanceStatus(
 
     if (daysRemaining < 0) {
       status = 'overdue';
-    } else if (daysRemaining <= 3) {
+    } else if (daysRemaining <= finalDays) {
       status = statusMax(status, 'urgent');
-    } else if (daysRemaining <= 14) {
+    } else if (daysRemaining <= earlyDays) {
       status = statusMax(status, 'due');
     }
   }

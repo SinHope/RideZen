@@ -13,16 +13,18 @@ interface SeedItem {
 }
 
 const UNIVERSAL_SEEDS: SeedItem[] = [
-  { category: 'Engine Oil',       scope: 'universal', interval_km: 5000,  interval_days: 90,  early_km: 1000, early_days: 14, final_km: 200, final_days: 3 },
-  { category: 'Air Filter',       scope: 'universal', interval_km: 10000, interval_days: 365, early_km: 1500, early_days: 30, final_km: 300, final_days: 7 },
-  { category: 'Spark Plug',       scope: 'universal', interval_km: 10000, interval_days: 365, early_km: 1500, early_days: 30, final_km: 300, final_days: 7 },
-  { category: 'Front Brake Pads', scope: 'universal', interval_km: 15000, early_km: 2000, final_km: 500 },
-  { category: 'Rear Brake Pads',  scope: 'universal', interval_km: 15000, early_km: 2000, final_km: 500 },
-  { category: 'Brake Fluid',      scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
-  { category: 'Front Tyre',       scope: 'universal', interval_km: 30000, early_km: 3000, final_km: 500 },
-  { category: 'Rear Tyre',        scope: 'universal', interval_km: 25000, early_km: 3000, final_km: 500 },
-  { category: 'Battery',          scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
-  { category: 'Coolant',          scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
+  { category: 'Engine Oil',          scope: 'universal', interval_km: 5000,  interval_days: 90,  early_km: 1000, early_days: 14, final_km: 200, final_days: 3 },
+  { category: 'Air Filter',          scope: 'universal', interval_km: 10000, interval_days: 365, early_km: 1500, early_days: 30, final_km: 300, final_days: 7 },
+  { category: 'Spark Plug',          scope: 'universal', interval_km: 10000, interval_days: 365, early_km: 1500, early_days: 30, final_km: 300, final_days: 7 },
+  { category: 'Front Brake Pads',    scope: 'universal', interval_km: 15000, early_km: 2000, final_km: 500 },
+  { category: 'Rear Brake Pads',     scope: 'universal', interval_km: 15000, early_km: 2000, final_km: 500 },
+  { category: 'Brake Fluid',         scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
+  { category: 'Front Tyre',          scope: 'universal', interval_km: 30000, early_km: 3000, final_km: 500 },
+  { category: 'Rear Tyre',           scope: 'universal', interval_km: 25000, early_km: 3000, final_km: 500 },
+  { category: 'Battery',             scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
+  { category: 'Coolant',             scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
+  { category: 'Front Fork Servicing',scope: 'universal', interval_km: 24000, interval_days: 360, early_km: 3000, early_days: 30, final_km: 500, final_days: 7 },
+  { category: 'Vehicle Wash',        scope: 'universal' },
 ];
 
 const SCOOTER_SEEDS: SeedItem[] = [
