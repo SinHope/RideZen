@@ -181,7 +181,7 @@ export default function AddVehicleScreen() {
               label="Vehicle name *"
               value={nickname}
               onChangeText={setNickname}
-              placeholder="e.g. My Yamaha NVX"
+              placeholder={selectedType === 'car' ? 'My Personal Car' : 'e.g. My Yamaha NVX'}
             />
             <StyledInput
               label="Current odometer *"
@@ -195,13 +195,13 @@ export default function AddVehicleScreen() {
               label="Make"
               value={make}
               onChangeText={setMake}
-              placeholder="e.g. Yamaha"
+              placeholder={selectedType === 'car' ? 'e.g. Hyundai' : 'e.g. Yamaha'}
             />
             <StyledInput
               label="Model"
               value={model}
               onChangeText={setModel}
-              placeholder="e.g. NVX 155"
+              placeholder={selectedType === 'car' ? 'e.g. Kona' : 'e.g. NVX 155'}
             />
             <StyledInput
               label="Year"
@@ -222,7 +222,7 @@ export default function AddVehicleScreen() {
               label="Plate number"
               value={plate}
               onChangeText={setPlate}
-              placeholder="e.g. SJP1234A"
+              placeholder={selectedType === 'scooter' || selectedType === 'manual_bike' ? 'e.g. FBR1234C' : 'e.g. SJP1234A'}
             />
             <View className="h-16" />
           </>

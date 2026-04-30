@@ -171,6 +171,11 @@ export const VehicleCard = React.memo(function VehicleCard({
             <Text style={{ color: 'white', fontSize: 18, fontFamily: 'PlayfairDisplay_500Medium', lineHeight: 22 }} numberOfLines={1}>
               {vehicle.nickname}
             </Text>
+            {(vehicle.make || vehicle.model || vehicle.plate_number) && (
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.60)', fontFamily: 'Inter_400Regular', marginTop: 2 }} numberOfLines={1}>
+                {[vehicle.make, vehicle.model, vehicle.plate_number].filter(Boolean).join(' · ')}
+              </Text>
+            )}
           </View>
 
           {/* Status badge */}
