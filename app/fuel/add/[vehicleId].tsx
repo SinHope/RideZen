@@ -6,6 +6,7 @@ import { fuelRepo } from '@/repositories/fuelRepo';
 import { vehicleRepo } from '@/repositories/vehicleRepo';
 import { ArrowLeftIcon } from '@/components/icons';
 import { CurrencyPickerModal } from '@/components/CurrencyPickerModal';
+import { DateWheelPickerModal } from '@/components/DateWheelPicker';
 import { getHomeCurrency, getRates, convert, ExchangeRates } from '@/services/currencyService';
 import { z } from 'zod';
 
@@ -50,6 +51,7 @@ export default function AddFuelLogScreen() {
   const today = new Date().toISOString().split('T')[0];
 
   const [date, setDate] = useState(today);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [odometer, setOdometer] = useState('');
   const [litres, setLitres] = useState('');
 
@@ -163,7 +165,25 @@ export default function AddFuelLogScreen() {
       </View>
 
       <ScrollView className="flex-1 px-4 pt-5" showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <StyledInput label="Date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
+        {/* Date field — opens wheel picker */}
+        <View className="mb-4">
+          <Text className="text-xs font-inter-medium text-zen-muted uppercase tracking-widest mb-1.5">Date</Text>
+          <TouchableOpacity
+            onPress={() => setShowDatePicker(true)}
+            className="flex-row items-center bg-zen-surface border border-zen-primary/15 rounded-2xl px-3.5 py-3"
+            accessibilityRole="button"
+            accessibilityLabel={`Date: ${date}. Tap to change`}
+          >
+            <Text className="flex-1 text-sm font-inter text-zen-text">
+              {date
+                ? new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', {
+                    day: '2-digit', month: 'long', year: 'numeric',
+                  })
+                : 'Select date'}
+            </Text>
+            <Text className="text-xs text-zen-muted font-inter ml-2">▼</Text>
+          </TouchableOpacity>
+        </View>
         <StyledInput label="Odometer *" value={odometer} onChangeText={setOdometer} placeholder="e.g. 14820" keyboardType="numeric" suffix="km" />
         <StyledInput label="Litres filled *" value={litres} onChangeText={setLitres} placeholder="e.g. 6.2" keyboardType="decimal-pad" suffix="L" />
         {/* Price per litre — bidirectional currency converter */}
@@ -266,6 +286,12 @@ export default function AddFuelLogScreen() {
         <View className="h-16" />
       </ScrollView>
 
+      <DateWheelPickerModal
+        visible={showDatePicker}
+        value={date}
+        onConfirm={setDate}
+        onClose={() => setShowDatePicker(false)}
+      />
       <CurrencyPickerModal
         visible={showCurrencyPicker}
         selected={currency}
