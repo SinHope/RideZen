@@ -16,8 +16,10 @@ import { runMigrations } from '@/db/migrations';
 import { setupAndroidChannel } from '@/notifications/scheduler';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AnimatedSplash } from '@/components/AnimatedSplash';
+import { TutorialModal } from '@/components/TutorialModal';
 import { RideSessionProvider } from '@/contexts/RideSessionContext';
 import { useTrackingMode } from '@/hooks/useTrackingMode';
+import { isTutorialShown } from '@/services/trackingPreferences';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -35,6 +37,7 @@ function LaunchChecker() {
 
 export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const [fontsLoaded] = useFonts({
     PlayfairDisplay_400Regular,
@@ -82,8 +85,12 @@ export default function RootLayout() {
               <Stack.Screen name="maintenance/log/[itemId]" options={{ presentation: 'modal' }} />
             </Stack>
             {showSplash && (
-              <AnimatedSplash onFinish={() => setShowSplash(false)} />
+              <AnimatedSplash onFinish={() => {
+                setShowSplash(false);
+                if (!isTutorialShown()) setShowTutorial(true);
+              }} />
             )}
+            <TutorialModal visible={showTutorial} onDone={() => setShowTutorial(false)} />
           </RideSessionProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>

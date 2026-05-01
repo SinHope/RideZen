@@ -39,10 +39,10 @@ export const fuelRepo = {
 
       const result = db.runSync(
         `INSERT INTO fuel_logs
-         (vehicle_id, date, odometer, litres, price_per_litre, is_full_tank, notes, km_since_last, consumption, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (vehicle_id, date, odometer, litres, price_per_litre, currency, is_full_tank, notes, km_since_last, consumption, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [input.vehicle_id, input.date, input.odometer, input.litres,
-         input.price_per_litre ?? null, input.is_full_tank ? 1 : 0,
+         input.price_per_litre ?? null, input.currency ?? null, input.is_full_tank ? 1 : 0,
          input.notes ?? null, kmSinceLast, consumption,
          new Date().toISOString()]
       );
@@ -91,6 +91,48 @@ export const fuelRepo = {
     } catch (e) {
       logToFile('DB_ERROR', 'fuelRepo.getMonthlyStats', String(e));
       return { data: null, error: 'Could not load stats.' };
+    }
+  },
+
+  async getMonthlyGlobalStats(vehicleIds: number[]): Promise<{
+    totalCost: number;
+    avgConsumption: number | null;
+    avgVehicleName: string | null;
+  }> {
+    if (vehicleIds.length === 0) return { totalCost: 0, avgConsumption: null, avgVehicleName: null };
+    try {
+      const db = getDb();
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      const monthStr = startOfMonth.toISOString().split('T')[0];
+      const placeholders = vehicleIds.map(() => '?').join(', ');
+
+      const costRow = db.getFirstSync<{ total_cost: number }>(
+        `SELECT COALESCE(SUM(litres * COALESCE(price_per_litre, 0)), 0) as total_cost
+         FROM fuel_logs WHERE date >= ? AND vehicle_id IN (${placeholders})`,
+        [monthStr, ...vehicleIds]
+      );
+
+      // Per-vehicle avg L/100km this month — pick first with data
+      const perVehicle = db.getAllSync<{ nickname: string; avg_consumption: number }>(
+        `SELECT v.nickname, AVG(fl.consumption) as avg_consumption
+         FROM fuel_logs fl
+         JOIN vehicles v ON v.id = fl.vehicle_id
+         WHERE fl.date >= ? AND fl.consumption IS NOT NULL AND fl.vehicle_id IN (${placeholders})
+         GROUP BY fl.vehicle_id
+         ORDER BY avg_consumption ASC`,
+        [monthStr, ...vehicleIds]
+      );
+
+      const best = perVehicle[0] ?? null;
+      return {
+        totalCost: costRow?.total_cost ?? 0,
+        avgConsumption: best ? best.avg_consumption : null,
+        avgVehicleName: best ? best.nickname : null,
+      };
+    } catch (e) {
+      logToFile('DB_ERROR', 'fuelRepo.getMonthlyGlobalStats', String(e));
+      return { totalCost: 0, avgConsumption: null, avgVehicleName: null };
     }
   },
 

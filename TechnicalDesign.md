@@ -1,7 +1,7 @@
 # RideZen — Technical Design Document
 
 **Version:** 1.1.0  
-**Last updated:** April 2025  
+**Last updated:** April 2026  
 **Author:** TulusNas Software Studio
 
 ---
@@ -314,6 +314,11 @@ Fully in-app. No external URL. 7 sections: data storage, location data, no accou
 ```
 /vehicle/add (Step 1: select type)
   → /vehicle/add (Step 2: enter details)
+      — placeholders adapt to selected type:
+        car          → Vehicle Name "My Personal Car", Make "e.g. Hyundai", Model "e.g. Kona"
+        scooter /
+        manual_bike  → Plate Number "e.g. FBR1234C"
+        other        → default motorcycle-style placeholders
   → Confirm modal
   → setMaintenancePromptPending() + setTrackingOnboardingPending()
   → router.replace('/(tabs)')
@@ -342,6 +347,10 @@ Home → tap "Start Ride" on vehicle card
   → Alert: "Ride saved!"
   → reload() refreshes odometer display
 ```
+
+### 8.4 VehicleCard — subtitle line
+
+Below the vehicle nickname, `VehicleCard` renders a single subtitle line joining `make`, `model`, and `plate_number` with `·` separators. The line is only rendered when at least one of the three fields is populated (`vehicle.make || vehicle.model || vehicle.plate_number`). Style: `fontSize: 11`, `color: rgba(255,255,255,0.60)`, `Inter_400Regular`.
 
 ---
 

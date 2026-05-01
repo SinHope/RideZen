@@ -54,7 +54,7 @@ app/
     maintenance.tsx    # Maintenance schedule with filter pills and tyre pairing
     settings.tsx       # App settings — tracking mode, reminder thresholds, export, privacy
   vehicle/
-    add.tsx            # Add vehicle (2-step flow, always triggers tracking onboarding)
+    add.tsx            # Add vehicle (2-step flow; Step 2 placeholders adapt to vehicle type; always triggers tracking onboarding)
     [id].tsx           # Edit / delete vehicle
   fuel/
     add/[vehicleId].tsx
@@ -63,7 +63,7 @@ app/
 
 src/
   components/
-    VehicleCard.tsx              # Vehicle card — Start/End Ride CTA + active glow state
+    VehicleCard.tsx              # Vehicle card — nickname + make·model·plate subtitle, Start/End Ride CTA, active glow state
     RideSessionButton.tsx        # Start/End Ride button (rendered inside VehicleCard)
     TrackingOnboardingModal.tsx  # 2-step tracking mode onboarding (shown on every vehicle add)
     AutoTrackBanner.tsx          # Banner shown when background location is revoked

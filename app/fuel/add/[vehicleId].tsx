@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, Alert, Switch } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fuelRepo } from '@/repositories/fuelRepo';
 import { vehicleRepo } from '@/repositories/vehicleRepo';
 import { ArrowLeftIcon } from '@/components/icons';
+import { CurrencyPickerModal } from '@/components/CurrencyPickerModal';
+import { getHomeCurrency, getRates, convert, ExchangeRates } from '@/services/currencyService';
 import { z } from 'zod';
 
 const fuelLogSchema = z.object({
@@ -50,10 +52,55 @@ export default function AddFuelLogScreen() {
   const [date, setDate] = useState(today);
   const [odometer, setOdometer] = useState('');
   const [litres, setLitres] = useState('');
+
+  useEffect(() => {
+    vehicleRepo.getById(parseInt(vehicleId)).then(result => {
+      if (result.data?.current_odometer) {
+        setOdometer(String(result.data.current_odometer));
+      }
+    });
+  }, [vehicleId]);
   const [pricePerLitre, setPricePerLitre] = useState('');
+  const [currency, setCurrency] = useState(getHomeCurrency());
+  const [localPrice, setLocalPrice] = useState('');
+  const [localCurrency, setLocalCurrency] = useState(getHomeCurrency());
+  const [rates, setRates] = useState<ExchangeRates | null>(null);
+  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
+  const [showLocalCurrencyPicker, setShowLocalCurrencyPicker] = useState(false);
   const [isFullTank, setIsFullTank] = useState(true);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getRates().then(r => setRates(r));
+  }, []);
+
+  const doConvert = (val: string, from: string, to: string, r: ExchangeRates | null): string => {
+    if (!r || !val) return '';
+    const num = parseFloat(val);
+    if (isNaN(num) || num <= 0) return '';
+    return convert(num, from, to, r).toFixed(4);
+  };
+
+  const handlePriceChange = (val: string) => {
+    setPricePerLitre(val);
+    setLocalPrice(doConvert(val, currency, localCurrency, rates));
+  };
+
+  const handleLocalPriceChange = (val: string) => {
+    setLocalPrice(val);
+    setPricePerLitre(doConvert(val, localCurrency, currency, rates));
+  };
+
+  const handleCurrencySelect = (code: string) => {
+    setCurrency(code);
+    setLocalPrice(doConvert(pricePerLitre, code, localCurrency, rates));
+  };
+
+  const handleLocalCurrencySelect = (code: string) => {
+    setLocalCurrency(code);
+    setLocalPrice(doConvert(pricePerLitre, currency, code, rates));
+  };
 
   const handleSave = async () => {
     const parsed = fuelLogSchema.safeParse({
@@ -75,6 +122,7 @@ export default function AddFuelLogScreen() {
     const result = await fuelRepo.add({
       vehicle_id: parseInt(vehicleId),
       ...parsed.data,
+      currency,
     });
     setSaving(false);
 
@@ -118,7 +166,78 @@ export default function AddFuelLogScreen() {
         <StyledInput label="Date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
         <StyledInput label="Odometer *" value={odometer} onChangeText={setOdometer} placeholder="e.g. 14820" keyboardType="numeric" suffix="km" />
         <StyledInput label="Litres filled *" value={litres} onChangeText={setLitres} placeholder="e.g. 6.2" keyboardType="decimal-pad" suffix="L" />
-        <StyledInput label="Price per litre" value={pricePerLitre} onChangeText={setPricePerLitre} placeholder="e.g. 2.48" keyboardType="decimal-pad" suffix="SGD" optional />
+        {/* Price per litre — bidirectional currency converter */}
+        <View className="mb-4">
+          {/* Price per litre field */}
+          <View className="flex-row items-center mb-1.5">
+            <Text className="text-xs font-inter-medium text-zen-muted uppercase tracking-widest">Price per litre</Text>
+            <Text className="text-xs text-zen-muted font-inter ml-1">(optional)</Text>
+          </View>
+          <View className="flex-row items-center bg-zen-surface border border-zen-primary/15 rounded-2xl px-3.5 py-3">
+            <TextInput
+              className="flex-1 text-sm font-inter text-zen-text"
+              value={pricePerLitre}
+              onChangeText={handlePriceChange}
+              placeholder="e.g. 2.48"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="decimal-pad"
+              accessibilityLabel="Price per litre"
+            />
+            <TouchableOpacity
+              onPress={() => setShowCurrencyPicker(true)}
+              className="ml-2 px-2.5 py-1 rounded-lg bg-zen-primary/10 border border-zen-primary/20"
+              accessibilityRole="button"
+              accessibilityLabel={`Pump currency: ${currency}. Tap to change`}
+            >
+              <Text className="text-xs font-inter-semibold text-zen-primary">{currency}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Exchange arrows */}
+          <View className="items-center my-2">
+            <View
+              className="flex-row items-center gap-2 px-3 py-1 rounded-full"
+              style={{ backgroundColor: 'rgba(27,108,168,0.07)' }}
+            >
+              <Text style={{ fontSize: 13, color: '#1B6CA8', lineHeight: 16 }}>↓</Text>
+              <Text style={{ fontSize: 13, color: '#1B6CA8', lineHeight: 16 }}>↑</Text>
+              {rates && currency !== localCurrency && (
+                <Text className="text-xs font-inter text-zen-muted" style={{ marginLeft: 4 }}>
+                  1 {currency} = {convert(1, currency, localCurrency, rates).toFixed(4)} {localCurrency}
+                </Text>
+              )}
+              {(!rates || currency === localCurrency) && (
+                <Text className="text-xs font-inter text-zen-muted" style={{ marginLeft: 4 }}>
+                  {currency === localCurrency ? '1 : 1' : 'loading rates…'}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {/* Local currency field */}
+          <View className="flex-row items-center mb-1.5">
+            <Text className="text-xs font-inter-medium text-zen-muted uppercase tracking-widest">Local currency</Text>
+          </View>
+          <View className="flex-row items-center bg-zen-surface border border-zen-primary/15 rounded-2xl px-3.5 py-3">
+            <TextInput
+              className="flex-1 text-sm font-inter text-zen-text"
+              value={localPrice}
+              onChangeText={handleLocalPriceChange}
+              placeholder="converted amount"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="decimal-pad"
+              accessibilityLabel="Local currency amount"
+            />
+            <TouchableOpacity
+              onPress={() => setShowLocalCurrencyPicker(true)}
+              className="ml-2 px-2.5 py-1 rounded-lg bg-zen-primary/10 border border-zen-primary/20"
+              accessibilityRole="button"
+              accessibilityLabel={`Local currency: ${localCurrency}. Tap to change`}
+            >
+              <Text className="text-xs font-inter-semibold text-zen-primary">{localCurrency}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
         <StyledInput label="Station / Notes" value={notes} onChangeText={setNotes} placeholder="e.g. Shell Jurong" optional />
 
         {/* Full tank toggle */}
@@ -146,6 +265,19 @@ export default function AddFuelLogScreen() {
 
         <View className="h-16" />
       </ScrollView>
+
+      <CurrencyPickerModal
+        visible={showCurrencyPicker}
+        selected={currency}
+        onSelect={handleCurrencySelect}
+        onClose={() => setShowCurrencyPicker(false)}
+      />
+      <CurrencyPickerModal
+        visible={showLocalCurrencyPicker}
+        selected={localCurrency}
+        onSelect={handleLocalCurrencySelect}
+        onClose={() => setShowLocalCurrencyPicker(false)}
+      />
     </KeyboardAvoidingView>
   );
 }

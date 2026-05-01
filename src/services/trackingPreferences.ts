@@ -84,3 +84,13 @@ export function clearBgLastCoords(): void {
   const db = getDb();
   db.runSync("DELETE FROM app_settings WHERE key IN ('bg_last_lat', 'bg_last_lon')");
 }
+
+// ─── First-launch tutorial flag ───────────────────────────────────────────────
+
+export function isTutorialShown(): boolean {
+  return getSetting('tutorial_shown') === 'true';
+}
+
+export function setTutorialShown(): void {
+  setSetting('tutorial_shown', 'true');
+}

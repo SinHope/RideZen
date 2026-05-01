@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { logToFile } from '@/utils/logger';
 
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 5;
 
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {
   try {
@@ -16,6 +16,9 @@ export async function runMigrations(db: SQLiteDatabase): Promise<void> {
     }
     if (currentVersion < 3) {
       migrateV3(db);
+    }
+    if (currentVersion < 5) {
+      migrateV4(db);
     }
 
     db.execSync(`PRAGMA user_version = ${CURRENT_VERSION}`);
@@ -109,6 +112,10 @@ async function migrateV1(db: SQLiteDatabase): Promise<void> {
   db.execSync(`CREATE INDEX IF NOT EXISTS idx_fuel_vehicle ON fuel_logs(vehicle_id, date DESC)`);
   db.execSync(`CREATE INDEX IF NOT EXISTS idx_maint_vehicle ON maintenance_items(vehicle_id)`);
   db.execSync(`CREATE INDEX IF NOT EXISTS idx_maint_logs_item ON maintenance_logs(item_id)`);
+}
+
+function migrateV4(db: SQLiteDatabase): void {
+  db.execSync(`ALTER TABLE fuel_logs ADD COLUMN currency TEXT DEFAULT 'SGD'`);
 }
 
 function migrateV2(db: SQLiteDatabase): void {

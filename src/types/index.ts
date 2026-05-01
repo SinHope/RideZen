@@ -36,6 +36,7 @@ export interface FuelLog {
   odometer: number;
   litres: number;
   price_per_litre?: number;
+  currency?: string;
   is_full_tank: number; // 1 = full, 0 = partial
   notes?: string;
   km_since_last?: number;
@@ -49,6 +50,7 @@ export interface FuelLogInput {
   odometer: number;
   litres: number;
   price_per_litre?: number;
+  currency?: string;
   is_full_tank: boolean;
   notes?: string;
 }

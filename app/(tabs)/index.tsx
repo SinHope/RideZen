@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useMaintenance } from '@/hooks/useMaintenance';
 import { fuelRepo } from '@/repositories/fuelRepo';
+import { maintenanceRepo } from '@/repositories/maintenanceRepo';
 import { VehicleCard } from '@/components/VehicleCard';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { TrackingOnboardingModal } from '@/components/TrackingOnboardingModal';
@@ -126,6 +127,12 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
+  const [overdueMessage, setOverdueMessage] = useState<string | null>(null);
+  const [monthlyStats, setMonthlyStats] = useState<{
+    totalCost: number;
+    avgConsumption: number | null;
+    avgVehicleName: string | null;
+  } | null>(null);
   const [showMaintenancePrompt, setShowMaintenancePrompt] = useState(false);
   const [showTrackingOnboarding, setShowTrackingOnboarding] = useState(false);
   const pendingMaintenanceAfterOnboarding = useRef(false);
@@ -154,6 +161,21 @@ export default function HomeScreen() {
       }, 1200);
     }
   }, []));
+
+  // Recompute overdue + monthly stats whenever the vehicle list changes
+  useEffect(() => {
+    if (vehicles.length === 0) {
+      setOverdueMessage(null);
+      setMonthlyStats(null);
+      return;
+    }
+    maintenanceRepo.getOverdueSummary(vehicles).then(({ message }) => {
+      setOverdueMessage(message);
+    });
+    fuelRepo.getMonthlyGlobalStats(vehicles.map(v => v.id)).then(stats => {
+      setMonthlyStats(stats);
+    });
+  }, [vehicles]);
 
   // Launch recheck for auto-track mode — runs once on first focus
   const launchRecheckDone = useRef(false);
@@ -274,9 +296,9 @@ export default function HomeScreen() {
         )}
 
         {/* Alert strip for overdue items */}
-        {vehicles.length > 0 && (
+        {overdueMessage && (
           <AlertStrip
-            message="1 item overdue — Engine Oil on Yamaha NVX"
+            message={overdueMessage}
             onPress={() => router.push('/(tabs)/maintenance')}
           />
         )}
@@ -348,8 +370,17 @@ export default function HomeScreen() {
               This month
             </Text>
             <View className="flex-row gap-2.5">
-              <QuickStatCard label="Fuel spent" value="SGD 68" sub="across all vehicles" />
-              <QuickStatCard label="Avg consumption" value="3.6" unit="L/100km" sub="Yamaha NVX" />
+              <QuickStatCard
+                label="Fuel spent"
+                value={monthlyStats?.totalCost ? `SGD ${monthlyStats.totalCost.toFixed(0)}` : '—'}
+                sub="across all vehicles"
+              />
+              <QuickStatCard
+                label="Avg consumption"
+                value={monthlyStats?.avgConsumption ? monthlyStats.avgConsumption.toFixed(1) : '—'}
+                unit={monthlyStats?.avgConsumption ? 'L/100km' : undefined}
+                sub={monthlyStats?.avgVehicleName ?? 'no data yet'}
+              />
             </View>
           </>
         )}

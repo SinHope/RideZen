@@ -6,6 +6,13 @@ All notable changes to RideZen are documented here.
 
 ## [Unreleased] — In Progress
 
+### Added
+- **Vehicle card subtitle** — `VehicleCard` now shows make, model, and plate number on a line below the vehicle name (font size 11, 60% white opacity), joined by `·`. Hidden entirely when all three fields are empty.
+- **Add vehicle — type-aware placeholders** — Step 2 form shows placeholders tailored to the selected vehicle type:
+  - Car: Vehicle Name → "My Personal Car", Make → "e.g. Hyundai", Model → "e.g. Kona"
+  - Scooter / Manual Motorcycle: Plate Number → "e.g. FBR1234C"
+  - Other types retain the default motorcycle-style placeholders
+
 ### Planned
 - First-launch tutorial (5-slide swipeable onboarding, skippable, `tutorial_shown` flag in `app_settings`)
 

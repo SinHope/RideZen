@@ -117,6 +117,42 @@ export const maintenanceRepo = {
     }
   },
 
+  async getOverdueSummary(
+    vehicles: { id: number; nickname: string; current_odometer: number }[]
+  ): Promise<{ total: number; message: string | null }> {
+    try {
+      const db = getDb();
+      const thresholds = loadStatusThresholds();
+      let total = 0;
+      let firstCategory: string | null = null;
+      let firstVehicle: string | null = null;
+
+      for (const v of vehicles) {
+        const rows = db.getAllSync<MaintenanceItem>(
+          'SELECT * FROM maintenance_items WHERE vehicle_id = ?',
+          [v.id]
+        );
+        const overdue = rows
+          .map(item => computeMaintenanceStatus(item, v.current_odometer, thresholds))
+          .filter(i => i.status === 'overdue');
+
+        total += overdue.length;
+        if (firstCategory === null && overdue.length > 0) {
+          firstCategory = overdue[0].category;
+          firstVehicle = v.nickname;
+        }
+      }
+
+      if (total === 0) return { total: 0, message: null };
+      const message = total === 1
+        ? `1 item overdue — ${firstCategory} on ${firstVehicle}`
+        : `${total} items overdue across your vehicles`;
+      return { total, message };
+    } catch {
+      return { total: 0, message: null };
+    }
+  },
+
   async updateItem(id: number, fields: Partial<MaintenanceItem>): Promise<Result<void>> {
     try {
       const db = getDb();
