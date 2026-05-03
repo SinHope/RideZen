@@ -1,7 +1,7 @@
 # RideZen — Technical Design Document
 
-**Version:** 1.1.0  
-**Last updated:** April 2026  
+**Version:** 1.2.0  
+**Last updated:** May 2026  
 **Author:** TulusNas Software Studio
 
 ---
@@ -21,7 +21,7 @@ RideZen is a fully offline, privacy-first motorcycle maintenance and odometer tr
 ┌─────────────────────────────────────────────────────┐
 │                    UI Layer                          │
 │  app/(tabs)/*.tsx   app/vehicle/*.tsx                │
-│  app/fuel/*.tsx     app/maintenance/*.tsx            │
+│  app/fuel/*.tsx (add, edit)  app/maintenance/*.tsx   │
 └────────────────────┬────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────┐
@@ -42,6 +42,7 @@ RideZen is a fully offline, privacy-first motorcycle maintenance and odometer tr
 │  rideSession.ts (haversine + odometer update)        │
 │  trackingPreferences.ts (app_settings R/W)           │
 │  backgroundLocationTask.ts (OS background task)      │
+│  currencyService.ts (exchange rates, conversion)     │
 └────────────────────┬────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────┐
@@ -81,10 +82,11 @@ RideZen is a fully offline, privacy-first motorcycle maintenance and odometer tr
 | odometer | REAL | |
 | litres | REAL | |
 | price_per_litre | REAL | Optional |
+| currency | TEXT | ISO 4217 code, e.g. `SGD`, `MYR`. Default `'SGD'`. Added in V4 migration. |
 | is_full_tank | INTEGER | 1 = full, 0 = partial |
 | notes | TEXT | Optional |
-| km_since_last | REAL | Computed on insert |
-| consumption | REAL | L/100km, computed on insert |
+| km_since_last | REAL | Computed on insert and update |
+| consumption | REAL | L/100km, computed on insert and update |
 | created_at | TEXT | |
 
 #### `maintenance_items`
@@ -147,7 +149,12 @@ RideZen is a fully offline, privacy-first motorcycle maintenance and odometer tr
 | `final_reminder_days` | `3` | days threshold for "urgent" |
 | `auto_track_vehicle_id` | — | Vehicle ID for auto-track |
 | `bg_last_lat` / `bg_last_lon` | — | Last GPS coordinate |
-| `tutorial_shown` | — | `true` once first-launch tutorial is completed or skipped *(planned)* |
+| `tutorial_shown` | — | `true` once first-launch tutorial is completed or skipped |
+| `home_currency` | `SGD` | ISO 4217 code for the user's home currency |
+| `exchange_rates_json` | — | Cached exchange rates JSON blob |
+| `exchange_rates_base` | — | Base currency the cached rates are relative to |
+| `exchange_rates_cached_at` | — | ISO datetime of last rates fetch |
+| `recent_currencies` | — | JSON array of up to 3 recently used currency codes |
 
 ### 3.2 Migration history
 
@@ -156,6 +163,7 @@ RideZen is a fully offline, privacy-first motorcycle maintenance and odometer tr
 | V1 | Core tables: vehicles, fuel_logs, maintenance_items, maintenance_logs, reminder_settings |
 | V2 | `app_settings` key-value store |
 | V3 | Inserts Front Fork Servicing + Vehicle Wash into all existing vehicles |
+| V4 (DB ver 5) | `ALTER TABLE fuel_logs ADD COLUMN currency TEXT DEFAULT 'SGD'` |
 
 ### 3.3 Seeded maintenance items
 
@@ -279,9 +287,11 @@ Located in `src/utils/export.ts`.
 1. Fetch vehicle, all fuel logs, all maintenance items, and service history per item (concurrent `Promise.all`)
 2. Build HTML string with inline CSS (vehicle stats grid, fuel log table, maintenance table)
 3. `Print.printToFileAsync({ html })` → generates temp PDF file
-4. Move to `FileSystem.cacheDirectory` with dated filename
+4. Move to `FileSystem.cacheDirectory` with dated filename — **⚠️ `FileSystem.moveAsync()` is deprecated** (see known issue below)
 5. `Sharing.shareAsync()` → native share sheet
 6. `FileSystem.deleteAsync()` → clean up cache
+
+> **Known issue:** `FileSystem.moveAsync()` from `expo-file-system` is deprecated as of Expo SDK 54+. Metro prints a warning on every app start. The function still works; no user-facing impact. Pending fix: replace with the new `File` / `Directory` class API from `expo-file-system`.
 
 **PDF sections:**
 - Header: vehicle name + export date
@@ -348,47 +358,70 @@ Home → tap "Start Ride" on vehicle card
   → reload() refreshes odometer display
 ```
 
-### 8.4 VehicleCard — subtitle line
+### 8.4 Edit / delete a fuel log
+```
+/(tabs)/fuel → tap "⋮" on a fuel log card
+  → Alert: Edit | Delete (destructive) | Cancel
+  → Edit → /fuel/edit/[logId] (modal)
+       Pre-filled: date, odometer, litres, price/L, currency, full-tank, notes
+       Save → fuelRepo.update(id, input) → recalculates km_since_last + consumption
+            → router.back() → useFocusEffect reloads list
+  → Delete → fuelRepo.delete(id) → list reloads immediately
+```
+
+### 8.5 VehicleCard — subtitle line
 
 Below the vehicle nickname, `VehicleCard` renders a single subtitle line joining `make`, `model`, and `plate_number` with `·` separators. The line is only rendered when at least one of the three fields is populated (`vehicle.make || vehicle.model || vehicle.plate_number`). Style: `fontSize: 11`, `color: rgba(255,255,255,0.60)`, `Inter_400Regular`.
 
 ---
 
-## 9. Planned Features
+## 9. Key Components
 
-### 9.1 First-Launch Tutorial
+### 9.1 First-Launch Tutorial (`TutorialModal`)
 
-**Trigger:** `tutorial_shown` key absent from `app_settings` on first app open.
+**Trigger:** `tutorial_shown` absent from `app_settings`. Shown once after splash screen.
 
-**Format:** Full-screen swipeable slides (Modal), dot indicator, skip link on every slide.
+**Format:** Full-screen FlashList with `pagingEnabled`, dot indicators, Skip / Next / CTA actions. `setTutorialShown()` called on complete or skip.
 
-**Slides:**
+**Slides:** Welcome → My Garage → Odometer Tracking → Maintenance → Fuel Log → Final CTA ("Add my first vehicle" → `/vehicle/add`)
 
-| # | Title | Content |
-|---|---|---|
-| 1 | Welcome to RideZen | App overview — offline, private, no account |
-| 2 | My Garage | Multi-vehicle, odometer, maintenance status at a glance |
-| 3 | Odometer Tracking | Manual Ride Session vs Auto-track — when to use each |
-| 4 | Maintenance | Status badges, service logging |
-| 5 | Fuel Log | Logging refuels, tracking consumption and spending |
-| Final | Let's add your first vehicle | CTA → `/vehicle/add`; skip → empty home |
+### 9.2 Currency Service (`currencyService.ts`)
 
-**Implementation notes:**
-- Flag: `tutorial_shown = true` on complete or skip
-- Shown before the "Add vehicle" flow, not inside it
-- Swipe left/right using `FlatList` with `pagingEnabled` or `ScrollView` + `onScroll`
-- Skip navigates to `/(tabs)` directly
+Single file containing all exchange-rate logic. **To switch API providers: edit only `buildUrl()` and `parseResponse()`.**
 
-### 9.2 RideZen Pro *(future)*
-- Cloud sync across devices
-- Multi-device support
-- Encrypted backup
+**Provider:** ExchangeRate-API (`https://v6.exchangerate-api.com/v6/{key}/latest/{base}`)  
+**Cache:** 24 h TTL in `app_settings`. App stays fully offline if cache is warm.  
+**Conversion formula:** `(amount / rates[from]) * rates[to]`
+
+**Public API:**
+```typescript
+getRates(base?)           // cache-first, async
+convert(amount, from, to, rates)
+getHomeCurrency() / setHomeCurrency(code)
+getRecentCurrencies() / addRecentCurrency(code)  // max 3, stored in app_settings
+SUPPORTED_CURRENCIES      // 162 CurrencyInfo[]  { code, name, country }
+```
+
+### 9.3 Currency Picker (`CurrencyPickerModal`)
+
+Full-screen searchable modal (FlashList, 162 items). Search filters by code, name, or country. **Most Recent** section (max 3 entries) rendered above the full list as plain `View` — not `ListHeaderComponent` — to avoid FlashList layout issues. Recents persist across sessions in `app_settings`.
+
+### 9.4 Date Wheel Picker (`DateWheelPickerModal`)
+
+3-column `ScrollView`-based wheel picker (Day | Month | Year). No extra packages.
+
+- **Snap:** `snapToInterval={ITEM_H}`, `decelerationRate="fast"` (iOS) / `0.9` (Android)
+- **Cross-platform scroll end:** both `onMomentumScrollEnd` and `onScrollEndDrag` handled and deduplicated via a `committed` ref — covers Android's low-velocity case where momentum never fires
+- **Day clamping:** `daysInMonth(month, year)` recalculated on month/year change; day index clamped and ScrollView scrolled programmatically
+- **Gradient mask:** 4 stacked semi-transparent white `View` bands at top and bottom — simulates a gradient without `expo-linear-gradient`
+- **Selection strip:** absolute `View` with blue-tinted background and hairline borders at the centre slot
+- Opens as a bottom-sheet `Modal` (`animationType="slide"`, transparent backdrop). Cancel dismisses; Done formats to `YYYY-MM-DD`.
 
 ---
 
-## 10. Build Notes
+## 11. Build Notes
 
-### 10.1 Development (Windows)
+### 11.1 Development (Windows)
 
 ```bash
 # Day-to-day — Metro hot reload, no rebuild needed
@@ -406,7 +439,7 @@ Required environment:
 - Visual C++ 2015–2022 Redistributable x64 (for `lightningcss` native binary)
 - `android/local.properties` must be manually created after each `npx expo prebuild --clean`
 
-### 10.2 EAS Build
+### 11.2 EAS Build
 
 ```bash
 # Development build (APK for device testing)
@@ -416,7 +449,7 @@ eas build --profile development --platform android
 eas build --profile production --platform android
 ```
 
-### 10.3 `app.json` — required for background location
+### 11.3 `app.json` — required for background location
 
 ```json
 {
@@ -438,7 +471,7 @@ Background location changes require a new EAS build — Metro reload is not suff
 
 ---
 
-## 11. Privacy & Compliance
+## 12. Privacy & Compliance
 
 - All user data stored locally on-device via SQLite
 - Location data used only to compute ride distance; not stored beyond current session in manual mode; not transmitted

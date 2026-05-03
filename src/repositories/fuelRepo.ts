@@ -22,6 +22,12 @@ export const fuelRepo = {
     try {
       const db = getDb();
 
+      // Defensive: ensure currency column exists regardless of migration state
+      const cols = db.getAllSync<{ name: string }>('PRAGMA table_info(fuel_logs)');
+      if (!cols.some(c => c.name === 'currency')) {
+        db.execSync(`ALTER TABLE fuel_logs ADD COLUMN currency TEXT DEFAULT 'SGD'`);
+      }
+
       // Get previous entry to calculate consumption
       const prev = db.getFirstSync<FuelLog>(
         'SELECT odometer, is_full_tank FROM fuel_logs WHERE vehicle_id = ? ORDER BY odometer DESC LIMIT 1',
@@ -57,6 +63,49 @@ export const fuelRepo = {
     } catch (e) {
       logToFile('DB_ERROR', 'fuelRepo.add', String(e));
       return { data: null, error: 'Could not save fuel log. Please try again.' };
+    }
+  },
+
+  async getById(id: number): Promise<Result<FuelLog | null>> {
+    try {
+      const db = getDb();
+      const row = db.getFirstSync<FuelLog>('SELECT * FROM fuel_logs WHERE id = ?', [id]);
+      return { data: row ?? null, error: null };
+    } catch (e) {
+      logToFile('DB_ERROR', 'fuelRepo.getById', String(e));
+      return { data: null, error: 'Could not load fuel log.' };
+    }
+  },
+
+  async update(id: number, input: FuelLogInput): Promise<Result<void>> {
+    try {
+      const db = getDb();
+
+      const prev = db.getFirstSync<FuelLog>(
+        'SELECT odometer, is_full_tank FROM fuel_logs WHERE vehicle_id = ? AND id != ? AND odometer < ? ORDER BY odometer DESC LIMIT 1',
+        [input.vehicle_id, id, input.odometer]
+      );
+
+      const kmSinceLast = prev ? input.odometer - prev.odometer : null;
+      const consumption = calcConsumption(
+        input.litres,
+        input.odometer,
+        prev?.odometer ?? 0,
+        (prev?.is_full_tank ?? 0) === 1,
+        input.is_full_tank
+      );
+
+      db.runSync(
+        `UPDATE fuel_logs SET date=?, odometer=?, litres=?, price_per_litre=?, currency=?, is_full_tank=?, notes=?, km_since_last=?, consumption=? WHERE id=?`,
+        [input.date, input.odometer, input.litres, input.price_per_litre ?? null,
+         input.currency ?? null, input.is_full_tank ? 1 : 0, input.notes ?? null,
+         kmSinceLast, consumption, id]
+      );
+
+      return { data: undefined, error: null };
+    } catch (e) {
+      logToFile('DB_ERROR', 'fuelRepo.update', String(e));
+      return { data: null, error: 'Could not update fuel log.' };
     }
   },
 

@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { useVehicles } from '@/hooks/useVehicles';
@@ -41,8 +41,12 @@ export default function FuelScreen() {
   const activeId = selectedVehicleId || vehicles[0]?.id || 0;
   const activeVehicle = vehicles.find(v => v.id === activeId) ?? vehicles[0];
 
-  const { logs, loading, monthStats, reload } = useFuelLogs(activeId);
+  const { logs, loading, monthStats, reload, deleteLog } = useFuelLogs(activeId);
   const [refreshing, setRefreshing] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => { reload(); }, [reload])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -50,9 +54,17 @@ export default function FuelScreen() {
     setRefreshing(false);
   }, [reload]);
 
+  const handleDelete = useCallback((id: number) => {
+    deleteLog(id);
+  }, [deleteLog]);
+
   const renderItem = useCallback(({ item }: { item: FuelLog }) => (
-    <FuelLogItem log={item} />
-  ), []);
+    <FuelLogItem
+      log={item}
+      onEdit={() => router.push(`/fuel/edit/${item.id}`)}
+      onDelete={() => handleDelete(item.id)}
+    />
+  ), [handleDelete]);
 
   const totalCost = monthStats.total_cost > 0 ? `SGD ${monthStats.total_cost.toFixed(0)}` : 'SGD —';
   const avgConsumption = monthStats.avg_consumption > 0 ? `${monthStats.avg_consumption.toFixed(1)}` : '—';

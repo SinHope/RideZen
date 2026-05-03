@@ -170,3 +170,22 @@ export function NavigationIcon({ color = defaultProps.color, size = defaultProps
     </Svg>
   );
 }
+
+export function PencilIcon({ color = defaultProps.color, size = defaultProps.size }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function MoreVerticalIcon({ color = defaultProps.color, size = defaultProps.size }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="5" r="1.5" fill={color} />
+      <Circle cx="12" cy="12" r="1.5" fill={color} />
+      <Circle cx="12" cy="19" r="1.5" fill={color} />
+    </Svg>
+  );
+}

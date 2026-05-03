@@ -82,6 +82,7 @@ export default function RootLayout() {
               <Stack.Screen name="vehicle/add" options={{ presentation: 'modal' }} />
               <Stack.Screen name="vehicle/[id]" />
               <Stack.Screen name="fuel/add/[vehicleId]" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="fuel/edit/[logId]" options={{ presentation: 'modal' }} />
               <Stack.Screen name="maintenance/log/[itemId]" options={{ presentation: 'modal' }} />
             </Stack>
             {showSplash && (

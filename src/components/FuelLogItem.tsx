@@ -1,12 +1,28 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { FuelLog } from '@/types';
 import { formatDate, formatConsumption } from '@/utils/consumption';
+import { PencilIcon, TrashIcon } from '@/components/icons';
 
-interface Props { log: FuelLog; }
+interface Props {
+  log: FuelLog;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}
 
-export const FuelLogItem = React.memo(function FuelLogItem({ log }: Props) {
+export const FuelLogItem = React.memo(function FuelLogItem({ log, onEdit, onDelete }: Props) {
   const cost = log.price_per_litre ? log.litres * log.price_per_litre : null;
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete entry?',
+      'This refuel log will be permanently removed.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: onDelete },
+      ]
+    );
+  };
 
   return (
     <View
@@ -26,9 +42,33 @@ export const FuelLogItem = React.memo(function FuelLogItem({ log }: Props) {
             {log.notes ? ` · ${log.notes}` : ''}
           </Text>
         </View>
-        <Text className="text-base font-inter-semibold text-zen-text">
-          {formatConsumption(log.consumption ?? null)}
-        </Text>
+        <View className="flex-row items-center gap-1.5">
+          <Text className="text-base font-inter-semibold text-zen-text">
+            {formatConsumption(log.consumption ?? null)}
+          </Text>
+          {onEdit && (
+            <TouchableOpacity
+              onPress={onEdit}
+              className="bg-zen-gold/10 rounded-lg p-1.5"
+              hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+              accessibilityRole="button"
+              accessibilityLabel="Edit entry"
+            >
+              <PencilIcon color="#D4840A" size={14} />
+            </TouchableOpacity>
+          )}
+          {onDelete && (
+            <TouchableOpacity
+              onPress={handleDelete}
+              className="bg-red-500/10 rounded-lg p-1.5"
+              hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+              accessibilityRole="button"
+              accessibilityLabel="Delete entry"
+            >
+              <TrashIcon color="#DC2626" size={14} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <View className="flex-row gap-3 flex-wrap">

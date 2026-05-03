@@ -7,14 +7,44 @@ All notable changes to RideZen are documented here.
 ## [Unreleased] — In Progress
 
 ### Added
-- **Vehicle card subtitle** — `VehicleCard` now shows make, model, and plate number on a line below the vehicle name (font size 11, 60% white opacity), joined by `·`. Hidden entirely when all three fields are empty.
-- **Add vehicle — type-aware placeholders** — Step 2 form shows placeholders tailored to the selected vehicle type:
-  - Car: Vehicle Name → "My Personal Car", Make → "e.g. Hyundai", Model → "e.g. Kona"
-  - Scooter / Manual Motorcycle: Plate Number → "e.g. FBR1234C"
-  - Other types retain the default motorcycle-style placeholders
 
-### Planned
-- First-launch tutorial (5-slide swipeable onboarding, skippable, `tutorial_shown` flag in `app_settings`)
+#### Fuel log — edit and delete
+
+- **Edit fuel log** — `app/fuel/edit/[logId].tsx` modal (presented identically to Log Refuel). Pre-populates all fields from the existing entry: date, odometer, litres, price per litre, pump currency, full-tank toggle, and notes. On save, calls `fuelRepo.update()` which recalculates `km_since_last` and `consumption` from the previous entry by odometer. Registered as a modal route in `_layout.tsx`.
+- **Delete fuel log** — accessible from the same "⋮" menu (see below). Uses the existing `fuelRepo.delete()`. The Alert's destructive button style serves as the single confirmation step.
+- **"⋮" context menu on fuel log cards** — `FuelLogItem` now accepts optional `onEdit` and `onDelete` callbacks. When either is provided, a `MoreVerticalIcon` (three dots) button appears in the top-right corner of the card. Tapping it opens a native `Alert.alert` with **Edit / Delete (destructive) / Cancel** options.
+- **`fuelRepo.getById(id)`** — new repository method; used by the edit screen to load an existing log.
+- **`fuelRepo.update(id, input)`** — new repository method; updates all editable fields and recomputes `km_since_last` and `consumption` from the entry with the nearest lower odometer (excluding self).
+- **`MoreVerticalIcon`** — added to `src/components/icons.tsx`.
+- **Fuel list auto-refresh on focus** — `useFocusEffect` added to the Fuel tab so the list reloads whenever the screen regains focus (returning from add or edit modal). Previously required a manual pull-to-refresh.
+
+#### Currency support in fuel log
+- **`currencyService.ts`** — single-file service layer for all currency logic. ExchangeRate-API integration (162 currencies, free tier 1,500 req/mo). Cache-first: rates stored in `app_settings`, refreshed at most once per 24 h. Public API: `getRates()`, `convert()`, `getHomeCurrency()`, `setHomeCurrency()`, `getRecentCurrencies()`, `addRecentCurrency()`. Switching providers requires editing only `buildUrl()` and `parseResponse()`.
+- **`CurrencyPickerModal`** — full-screen searchable picker (162 currencies). FlashList for performance. Search filters by code, name, or country. **Most Recent** section (max 3) appears above the full list when not searching; recents stored in `app_settings` under `recent_currencies` and updated on every selection.
+- **Bidirectional currency converter on Log Refuel** — "Price per litre" and "Local currency" fields with live conversion. Typing in either field instantly updates the other. Exchange rate shown inline between the two fields (`1 SGD = 3.42xx MYR`). Tapping either currency badge opens `CurrencyPickerModal`. Only `price_per_litre` + `currency` are saved to DB; the local field is reference-only.
+- **`currency` column in `fuel_logs`** — migration V4 (DB version bumped to 5) adds `currency TEXT DEFAULT 'SGD'` via `ALTER TABLE`. `FuelLog` and `FuelLogInput` types and `fuelRepo.add()` updated accordingly.
+
+#### Date wheel picker
+- **`DateWheelPickerModal`** — custom 3-column iOS-style wheel picker (Day | Month | Year). Built with `ScrollView` snap — no extra packages. Selection highlight strip (blue-tinted) at the centre row. Step-gradient fade mask at top/bottom simulated with layered semi-transparent Views (no `expo-linear-gradient` required). Day count auto-adjusts when month or year changes (e.g. Mar 31 → Feb 28). Handles both `onMomentumScrollEnd` and `onScrollEndDrag` for correct behaviour on Android (where low-velocity scrolls skip the momentum event). Opens from the date field in Log Refuel as a bottom-sheet modal.
+- **Log Refuel — tappable date field** — replaces the manual YYYY-MM-DD text input. Shows date formatted as `DD Month YYYY`. Tapping opens `DateWheelPickerModal`; confirming writes back to `YYYY-MM-DD` for storage.
+
+#### Home screen — real data
+- **Overdue alert strip** — `maintenanceRepo.getOverdueSummary(vehicles)` computes live overdue count across all vehicles. Message: `"1 item overdue — Engine Oil on Irsyad Bike"` (single) or `"3 items overdue across your vehicles"` (multiple). Strip is hidden when count is 0.
+- **"This month" stats** — `fuelRepo.getMonthlyGlobalStats(vehicleIds)` returns real total fuel cost and the per-vehicle average L/100km for the best-performing vehicle this month.
+
+#### Other
+- **Vehicle card subtitle** — `VehicleCard` now shows make, model, and plate number on a line below the vehicle name (font size 11, 60% white opacity), joined by `·`. Hidden entirely when all three fields are empty.
+- **Add vehicle — type-aware placeholders** — Step 2 form shows placeholders tailored to the selected vehicle type (Car: "My Personal Car" / "e.g. Hyundai" / "e.g. Kona"; Scooter/Manual Bike: plate "e.g. FBR1234C").
+- **Auto-fill odometer on Log Refuel** — screen now pre-fills the odometer field with the vehicle's current `current_odometer` on open.
+- **First-launch tutorial** — `TutorialModal` with 6 slides (Welcome, My Garage, Odometer Tracking, Maintenance, Fuel Log, Final CTA). FlashList with paging, dot indicators, Skip / Next / "Add my first vehicle" actions. `tutorial_shown` flag persisted in `app_settings`. Shown once after splash screen on first install.
+
+### Changed
+- **DB migration** — `CURRENT_VERSION` bumped from 4 → 5. `migrateV4()` guard condition is `currentVersion < 5` (not `< 4`) because the DB was already at version 4 from a prior placeholder bump.
+- **`FuelLogItem` — edit/delete UI revised** — replaced the single "⋮" context menu with two explicit inline icon buttons: pencil (edit, amber) and trash (delete, red). Delete button shows a native confirmation Alert before executing. Both buttons use NativeWind classes (`bg-zen-gold/10`, `bg-red-500/10`, `rounded-lg`, `p-1.5`) with no inline styles.
+- **`PencilIcon`** — added to `src/components/icons.tsx` (used by the edit button on fuel log cards).
+
+### Known Issues
+- **`expo-file-system` deprecation warning** — `FileSystem.moveAsync()` in `src/utils/export.ts` (PDF export) triggers a Metro/runtime deprecation warning: *"Method moveAsync imported from expo-file-system is deprecated."* The old API still works and does not affect app functionality. Fix: migrate `export.ts` to use the new `File` and `Directory` classes from `expo-file-system`. Deferred.
 
 ---
 
