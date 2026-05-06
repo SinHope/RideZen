@@ -406,11 +406,10 @@ export default function SettingsScreen() {
   useFocusEffect(loadReminderSettings);
 
   const handleExport = async () => {
-    const v = vehicles[0];
-    if (!v) { Alert.alert('No vehicle', 'Add a vehicle first.'); return; }
+    if (!vehicles.length) { Alert.alert('No vehicle', 'Add a vehicle first.'); return; }
     setExporting(true);
     try {
-      await exportAllDataAsPdf(v.id, v.nickname);
+      await exportAllDataAsPdf();
     } catch (e: any) {
       Alert.alert('Export failed', e.message);
     } finally {
