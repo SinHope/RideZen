@@ -4,6 +4,7 @@ import * as Print from 'expo-print';
 import { fuelRepo } from '@/repositories/fuelRepo';
 import { maintenanceRepo } from '@/repositories/maintenanceRepo';
 import { vehicleRepo } from '@/repositories/vehicleRepo';
+import { getHomeCurrency } from '@/services/currencyService';
 import { logToFile } from './logger';
 import { Vehicle, FuelLog, MaintenanceItem, MaintenanceLog } from '@/types';
 
@@ -82,10 +83,11 @@ function buildVehicleSection(
     vehicle.type === 'car' ? 'Car' : 'Other';
 
   const metaParts = [vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(' ');
-  const currency = fuelLogs.find(l => l.currency)?.currency ?? 'SGD';
+  // Aggregate costs use price_home so foreign-currency fills aren't summed raw
+  const currency = getHomeCurrency();
   const totalFuelCost = fuelLogs
-    .filter(l => l.price_per_litre && l.litres)
-    .reduce((sum, l) => sum + (l.price_per_litre! * l.litres), 0);
+    .filter(l => l.price_home && l.litres)
+    .reduce((sum, l) => sum + (l.price_home! * l.litres), 0);
 
   return `
 <div class="vehicle-section">

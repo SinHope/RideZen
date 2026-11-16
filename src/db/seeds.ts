@@ -13,34 +13,40 @@ interface SeedItem {
 }
 
 const UNIVERSAL_SEEDS: SeedItem[] = [
-  { category: 'Engine Oil',          scope: 'universal', interval_km: 5000,  interval_days: 90,  early_km: 1000, early_days: 14, final_km: 200, final_days: 3 },
-  { category: 'Air Filter',          scope: 'universal', interval_km: 10000, interval_days: 365, early_km: 1500, early_days: 30, final_km: 300, final_days: 7 },
-  { category: 'Spark Plug',          scope: 'universal', interval_km: 10000, interval_days: 365, early_km: 1500, early_days: 30, final_km: 300, final_days: 7 },
-  { category: 'Front Brake Pads',    scope: 'universal', interval_km: 15000, early_km: 2000, final_km: 500 },
-  { category: 'Rear Brake Pads',     scope: 'universal', interval_km: 15000, early_km: 2000, final_km: 500 },
-  { category: 'Brake Fluid',         scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
-  { category: 'Front Tyre',          scope: 'universal', interval_km: 30000, early_km: 3000, final_km: 500 },
-  { category: 'Rear Tyre',           scope: 'universal', interval_km: 25000, early_km: 3000, final_km: 500 },
-  { category: 'Battery',             scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
-  { category: 'Coolant',             scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
-  { category: 'Front Fork Servicing',scope: 'universal', interval_km: 24000, interval_days: 360, early_km: 3000, early_days: 30, final_km: 500, final_days: 7 },
-  { category: 'Vehicle Wash',        scope: 'universal' },
+  { category: 'Engine Oil',             scope: 'universal', interval_km: 5000,  interval_days: 90,  early_km: 1000, early_days: 14, final_km: 200, final_days: 3 },
+  { category: 'Oil Filter',             scope: 'universal', interval_km: 10000, interval_days: 365, early_km: 1500, early_days: 30, final_km: 300, final_days: 7 },
+  { category: 'Air Filter',             scope: 'universal', interval_km: 10000, interval_days: 365, early_km: 1500, early_days: 30, final_km: 300, final_days: 7 },
+  { category: 'Throttle Body Cleaning', scope: 'universal', interval_km: 12000, interval_days: 365, early_km: 1500, early_days: 30, final_km: 300, final_days: 7 },
+  { category: 'Spark Plug',             scope: 'universal', interval_km: 10000, interval_days: 365, early_km: 1500, early_days: 30, final_km: 300, final_days: 7 },
+  { category: 'Valve Clearance',        scope: 'universal', interval_km: 12000, interval_days: 365, early_km: 1500, early_days: 30, final_km: 300, final_days: 7 },
+  { category: 'Front Brake Pads',       scope: 'universal', interval_km: 15000, early_km: 2000, final_km: 500 },
+  { category: 'Rear Brake Pads',        scope: 'universal', interval_km: 15000, early_km: 2000, final_km: 500 },
+  { category: 'Brake Fluid',            scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
+  { category: 'Front Tyre',             scope: 'universal', interval_km: 30000, early_km: 3000, final_km: 500 },
+  { category: 'Rear Tyre',              scope: 'universal', interval_km: 25000, early_km: 3000, final_km: 500 },
+  { category: 'Battery',                scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
+  { category: 'Coolant',                scope: 'universal', interval_days: 730, early_days: 30, final_days: 7 },
+  { category: 'Front Fork Servicing',   scope: 'universal', interval_km: 24000, interval_days: 360, early_km: 3000, early_days: 30, final_km: 500, final_days: 7 },
+  { category: 'Engine Overhaul',        scope: 'universal' },
+  { category: 'Vehicle Wash',           scope: 'universal' },
 ];
 
 const SCOOTER_SEEDS: SeedItem[] = [
-  { category: 'Gear Oil',           scope: 'scooter', interval_km: 5000,  interval_days: 180, early_km: 1000, early_days: 14, final_km: 200, final_days: 3 },
-  { category: 'CVT Basic Service',  scope: 'scooter', interval_km: 8000,  early_km: 1500, final_km: 300 },
-  { category: 'CVT Rollers',        scope: 'scooter', interval_km: 12000, early_km: 2000, final_km: 500 },
-  { category: 'CVT V Belt',         scope: 'scooter', interval_km: 25000, early_km: 3000, final_km: 500 },
-  { category: 'CVT Variator/Pulley',scope: 'scooter', interval_km: 20000, early_km: 2500, final_km: 500 },
+  { category: 'Gear Oil',             scope: 'scooter', interval_km: 5000,  interval_days: 180, early_km: 1000, early_days: 14, final_km: 200, final_days: 3 },
+  { category: 'CVT Service',          scope: 'scooter', interval_km: 8000,  early_km: 1500, final_km: 300 },
+  { category: 'CVT Rollers',          scope: 'scooter', interval_km: 18000, early_km: 2000, final_km: 500 },
+  { category: 'CVT V Belt',           scope: 'scooter', interval_km: 25000, early_km: 3000, final_km: 500 },
+  { category: 'CVT Sliders & Guides', scope: 'scooter', interval_km: 24000, early_km: 2500, final_km: 500 },
+  { category: 'CVT Clutch & Bell',    scope: 'scooter', interval_km: 30000, early_km: 3000, final_km: 500 },
 ];
 
 const MANUAL_BIKE_SEEDS: SeedItem[] = [
-  { category: 'Gear Oil',               scope: 'manual_bike', interval_km: 5000,  interval_days: 180, early_km: 1000, early_days: 14, final_km: 200, final_days: 3 },
-  { category: 'Chain Lubrication',      scope: 'manual_bike', interval_km: 800,   early_km: 200, final_km: 50 },
-  { category: 'Chain Adjustment',       scope: 'manual_bike', interval_km: 2500,  early_km: 500, final_km: 100 },
-  { category: 'Chain Replacement',      scope: 'manual_bike', interval_km: 18000, early_km: 2000, final_km: 500 },
-  { category: 'Clutch Cable Inspection',scope: 'manual_bike', interval_km: 10000, early_km: 1500, final_km: 300 },
+  { category: 'Gear Oil',                scope: 'manual_bike', interval_km: 5000,  interval_days: 180, early_km: 1000, early_days: 14, final_km: 200, final_days: 3 },
+  { category: 'Chain Lubrication',       scope: 'manual_bike', interval_km: 800,   early_km: 200, final_km: 50 },
+  { category: 'Chain Adjustment',        scope: 'manual_bike', interval_km: 2500,  early_km: 500, final_km: 100 },
+  { category: 'Chain & Sprocket Set',    scope: 'manual_bike', interval_km: 18000, early_km: 2000, final_km: 500 },
+  { category: 'Clutch Cable Inspection', scope: 'manual_bike', interval_km: 10000, early_km: 1500, final_km: 300 },
+  { category: 'Clutch Plates',           scope: 'manual_bike', interval_km: 35000, early_km: 3000, final_km: 500 },
 ];
 
 const CAR_SEEDS: SeedItem[] = [

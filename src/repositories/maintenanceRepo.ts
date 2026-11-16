@@ -2,6 +2,7 @@ import { getDb } from '@/db/client';
 import { MaintenanceItem, MaintenanceLog, ServiceLogInput, Result, MaintenanceStatus } from '@/types';
 import { computeMaintenanceStatus, loadStatusThresholds } from '@/utils/reminderCheck';
 import { logToFile } from '@/utils/logger';
+import { requestMaintenanceSync } from '@/notifications/maintenanceSyncSignal';
 
 export const maintenanceRepo = {
   async getByVehicle(vehicleId: number, currentOdometer: number): Promise<Result<MaintenanceItem[]>> {
@@ -86,6 +87,7 @@ export const maintenanceRepo = {
          input.item_id]
       );
 
+      requestMaintenanceSync(); // the item just reset to ok — forget what was announced for it
       return { data: undefined, error: null };
     } catch (e) {
       logToFile('DB_ERROR', 'maintenanceRepo.logService', String(e));
@@ -168,6 +170,7 @@ export const maintenanceRepo = {
         `UPDATE maintenance_items SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id]
       );
+      requestMaintenanceSync();
       return { data: undefined, error: null };
     } catch (e) {
       logToFile('DB_ERROR', 'maintenanceRepo.updateItem', String(e));

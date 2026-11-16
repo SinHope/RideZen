@@ -5,11 +5,21 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BellIcon, ZapIcon, ShieldIcon, DownloadIcon, StarIcon, ChevronRightIcon, NavigationIcon, PlayIcon } from '@/components/icons';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { BellIcon, ClockIcon, ZapIcon, ShieldIcon, DownloadIcon, StarIcon, ChevronRightIcon, NavigationIcon, PlayIcon } from '@/components/icons';
 import { exportAllDataAsPdf } from '@/utils/export';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useTrackingMode, SwitchToAutoOutcome } from '@/hooks/useTrackingMode';
 import { getTrackingMode } from '@/services/trackingPreferences';
+import {
+  getMaintenanceNotifEnabled, setMaintenanceNotifEnabled,
+  getNotifyTime, setNotifyTime,
+  getNotifyGrouped, setNotifyGrouped,
+} from '@/services/notificationPreferences';
+import { syncMaintenanceNotifications } from '@/notifications/maintenanceNotifications';
+import { requestNotificationPermissions } from '@/notifications/scheduler';
+import { formatNotifyTime, notifyTimeToDate, dateToNotifyTime } from '@/utils/notifyTime';
 import { getDb } from '@/db/client';
 
 // ── app_settings helpers ──────────────────────────────────────────────────────
@@ -44,14 +54,18 @@ interface SettingsRowProps {
   sub?: string;
   right?: React.ReactNode;
   onPress?: () => void;
+  /** Greyed out and not pressable (a setting that only applies while another one is on). */
+  disabled?: boolean;
 }
 
-function SettingsRow({ icon, iconBg, name, sub, right, onPress }: SettingsRowProps) {
+function SettingsRow({ icon, iconBg, name, sub, right, onPress, disabled }: SettingsRowProps) {
   return (
     <TouchableOpacity
       className="flex-row items-center gap-3 px-3.5 py-3 border-b border-zen-primary/5 last:border-b-0"
-      onPress={onPress}
-      activeOpacity={onPress ? 0.7 : 1}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
+      style={disabled ? { opacity: 0.45 } : undefined}
+      activeOpacity={onPress && !disabled ? 0.7 : 1}
       accessibilityRole={onPress ? 'button' : undefined}
       accessibilityLabel={name}
     >
@@ -62,7 +76,7 @@ function SettingsRow({ icon, iconBg, name, sub, right, onPress }: SettingsRowPro
         <Text className="text-sm text-zen-text font-inter">{name}</Text>
         {sub ? <Text className="text-xs text-zen-muted font-inter mt-0.5">{sub}</Text> : null}
       </View>
-      <View>{right ?? (onPress ? <ChevronRightIcon color="#6B7280" size={14} /> : null)}</View>
+      <View>{right ?? (onPress && !disabled ? <ChevronRightIcon color="#6B7280" size={14} /> : null)}</View>
     </TouchableOpacity>
   );
 }
@@ -386,6 +400,9 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { vehicles } = useVehicles();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [notifyTime, setNotifyTimeState] = useState('09:00');
+  const [notifyGrouped, setNotifyGroupedState] = useState(false);
+  const [showIosTimePicker, setShowIosTimePicker] = useState(false);
   const [showEarlyModal, setShowEarlyModal] = useState(false);
   const [showFinalModal, setShowFinalModal] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
@@ -401,9 +418,66 @@ export default function SettingsScreen() {
     setEarlyDays(getAppSetting('early_warning_days', '14'));
     setFinalKm(getAppSetting('final_reminder_km', '200'));
     setFinalDays(getAppSetting('final_reminder_days', '3'));
+    setNotificationsEnabled(getMaintenanceNotifEnabled());
+    setNotifyTimeState(getNotifyTime());
+    setNotifyGroupedState(getNotifyGrouped());
   }, []);
 
   useFocusEffect(loadReminderSettings);
+
+  // ── Maintenance notifications ───────────────────────────────────────────────
+
+  const handleToggleNotifications = async (enabled: boolean) => {
+    setNotificationsEnabled(enabled);
+    setMaintenanceNotifEnabled(enabled);
+    if (enabled) {
+      const granted = await requestNotificationPermissions();
+      if (!granted) {
+        Alert.alert(
+          'Notifications are blocked',
+          'Allow notifications for RideZen in your phone settings to get service reminders.',
+          [
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            { text: 'Not now', style: 'cancel' },
+          ]
+        );
+      }
+    }
+    // OFF cancels what is pending; ON sends anything that came due while it was off
+    await syncMaintenanceNotifications();
+  };
+
+  const saveNotifyTime = (date: Date) => {
+    const time = dateToNotifyTime(date);
+    if (setNotifyTime(time)) {
+      setNotifyTimeState(time);
+      void syncMaintenanceNotifications(); // re-books every pending date reminder at the new time
+    }
+  };
+
+  const handlePickTime = () => {
+    const onChange = (event: DateTimePickerEvent, date?: Date) => {
+      setShowIosTimePicker(false);
+      if (event.type === 'set' && date) saveNotifyTime(date);
+    };
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({ value: notifyTimeToDate(notifyTime), mode: 'time', is24Hour: false, onChange });
+    } else {
+      setShowIosTimePicker(true);
+    }
+  };
+
+  const handleToggleGrouped = (grouped: boolean) => {
+    setNotifyGroupedState(grouped);
+    setNotifyGrouped(grouped);
+    void syncMaintenanceNotifications();
+  };
+
+  // Levels (due / urgent / overdue) move with the thresholds, so re-check after one is saved
+  const handleThresholdsSaved = () => {
+    loadReminderSettings();
+    void syncMaintenanceNotifications();
+  };
 
   const handleExport = async () => {
     if (!vehicles.length) { Alert.alert('No vehicle', 'Add a vehicle first.'); return; }
@@ -469,14 +543,39 @@ export default function SettingsScreen() {
             icon={<BellIcon color="#1B6CA8" size={15} />}
             iconBg="bg-zen-primary-pale"
             name="Push notifications"
-            sub="Early warning + final reminder"
+            sub="Due soon, urgent and overdue services"
             right={
               <Switch
                 value={notificationsEnabled}
-                onValueChange={setNotificationsEnabled}
+                onValueChange={handleToggleNotifications}
                 trackColor={{ false: '#DDD', true: '#74C69D' }}
                 thumbColor="white"
                 accessibilityLabel="Toggle push notifications"
+              />
+            }
+          />
+          <SettingsRow
+            icon={<ClockIcon color="#1B6CA8" size={15} />}
+            iconBg="bg-zen-primary-pale"
+            name="Notification time"
+            sub={`Date reminders arrive at ${formatNotifyTime(notifyTime)}`}
+            disabled={!notificationsEnabled}
+            onPress={handlePickTime}
+          />
+          <SettingsRow
+            icon={<BellIcon color="#2D6A4F" size={15} />}
+            iconBg="bg-[#D6F0E2]"
+            name="Group into one summary"
+            sub="One notification instead of one per service"
+            disabled={!notificationsEnabled}
+            right={
+              <Switch
+                value={notifyGrouped}
+                onValueChange={handleToggleGrouped}
+                disabled={!notificationsEnabled}
+                trackColor={{ false: '#DDD', true: '#74C69D' }}
+                thumbColor="white"
+                accessibilityLabel="Toggle grouped summary"
               />
             }
           />
@@ -537,6 +636,18 @@ export default function SettingsScreen() {
         </Text>
       </ScrollView>
 
+      {showIosTimePicker && Platform.OS !== 'android' && (
+        <DateTimePicker
+          value={notifyTimeToDate(notifyTime)}
+          mode="time"
+          display="spinner"
+          onChange={(event, date) => {
+            setShowIosTimePicker(false);
+            if (event.type === 'set' && date) saveNotifyTime(date);
+          }}
+        />
+      )}
+
       <ReminderEditModal
         visible={showEarlyModal}
         title="Default Early Warning"
@@ -545,7 +656,7 @@ export default function SettingsScreen() {
         defaultKm="1000"
         defaultDays="14"
         onClose={() => setShowEarlyModal(false)}
-        onSaved={loadReminderSettings}
+        onSaved={handleThresholdsSaved}
       />
 
       <ReminderEditModal
@@ -556,7 +667,7 @@ export default function SettingsScreen() {
         defaultKm="200"
         defaultDays="3"
         onClose={() => setShowFinalModal(false)}
-        onSaved={loadReminderSettings}
+        onSaved={handleThresholdsSaved}
       />
 
       <PrivacyModal visible={showPrivacy} onClose={() => setShowPrivacy(false)} />

@@ -37,6 +37,7 @@ export interface FuelLog {
   litres: number;
   price_per_litre?: number;
   currency?: string;
+  price_home?: number; // price_per_litre converted to home currency at log time
   is_full_tank: number; // 1 = full, 0 = partial
   notes?: string;
   km_since_last?: number;
@@ -51,6 +52,7 @@ export interface FuelLogInput {
   litres: number;
   price_per_litre?: number;
   currency?: string;
+  price_home?: number;
   is_full_tank: boolean;
   notes?: string;
 }

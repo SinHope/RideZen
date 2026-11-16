@@ -67,32 +67,38 @@ export default function EditFuelLogScreen() {
 
   useEffect(() => {
     const id = parseInt(logId);
-    if (!id) return;
+    const bail = () => {
+      Alert.alert('Not found', 'This fuel log no longer exists.');
+      router.back();
+    };
+    if (!id) { bail(); return; }
 
-    Promise.all([fuelRepo.getById(id), getRates()]).then(([logResult, ratesData]) => {
-      setRates(ratesData);
-      const log = logResult.data;
-      if (!log) return;
+    Promise.all([fuelRepo.getById(id), getRates()])
+      .then(([logResult, ratesData]) => {
+        setRates(ratesData);
+        const log = logResult.data;
+        if (!log) { bail(); return; }
 
-      const ppl = log.price_per_litre ? String(log.price_per_litre) : '';
-      const curr = log.currency ?? getHomeCurrency();
-      const homeCurr = getHomeCurrency();
+        const ppl = log.price_per_litre ? String(log.price_per_litre) : '';
+        const curr = log.currency ?? getHomeCurrency();
+        const homeCurr = getHomeCurrency();
 
-      setVehicleId(log.vehicle_id);
-      setDate(log.date);
-      setOdometer(String(log.odometer));
-      setLitres(String(log.litres));
-      setPricePerLitre(ppl);
-      setCurrency(curr);
-      setIsFullTank(log.is_full_tank === 1);
-      setNotes(log.notes ?? '');
+        setVehicleId(log.vehicle_id);
+        setDate(log.date);
+        setOdometer(String(log.odometer));
+        setLitres(String(log.litres));
+        setPricePerLitre(ppl);
+        setCurrency(curr);
+        setIsFullTank(log.is_full_tank === 1);
+        setNotes(log.notes ?? '');
 
-      if (ppl && ratesData && curr !== homeCurr) {
-        setLocalPrice(convert(parseFloat(ppl), curr, homeCurr, ratesData).toFixed(4));
-      }
+        if (ppl && ratesData && curr !== homeCurr) {
+          setLocalPrice(convert(parseFloat(ppl), curr, homeCurr, ratesData).toFixed(4));
+        }
 
-      setLoading(false);
-    });
+        setLoading(false);
+      })
+      .catch(bail);
   }, [logId]);
 
   const doConvert = (val: string, from: string, to: string, r: ExchangeRates | null): string => {
@@ -138,11 +144,20 @@ export default function EditFuelLogScreen() {
       return;
     }
 
+    // Lock in the home-currency price at log time so totals never mix currencies
+    const home = getHomeCurrency();
+    let priceHome: number | undefined;
+    if (parsed.data.price_per_litre != null) {
+      if (currency === home) priceHome = parsed.data.price_per_litre;
+      else if (rates) priceHome = parseFloat(convert(parsed.data.price_per_litre, currency, home, rates).toFixed(4));
+    }
+
     setSaving(true);
     const result = await fuelRepo.update(parseInt(logId), {
       vehicle_id: vehicleId,
       ...parsed.data,
       currency,
+      price_home: priceHome,
     });
     setSaving(false);
 
@@ -304,7 +319,7 @@ export default function EditFuelLogScreen() {
         {!isFullTank && (
           <View className="bg-amber-50 border border-amber-200 rounded-2xl px-3.5 py-2.5 mb-4">
             <Text className="text-xs text-amber-700 font-inter">
-              Partial fills are recorded but won't affect your L/100km average — consumption is only calculated between two full-tank fills.
+              Partial fills are recorded and rolled into your next full-tank fill's L/100km calculation — consumption is measured between two full-tank fills.
             </Text>
           </View>
         )}

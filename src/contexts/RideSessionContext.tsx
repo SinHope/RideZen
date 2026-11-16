@@ -6,6 +6,9 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import * as Location from 'expo-location';
 import { Alert } from 'react-native';
 import { haversineKm, addRideDistance } from '@/services/rideSession';
+import { armIdleReminder, cancelIdleReminder } from '@/notifications/idleReminder';
+import { onManualRideStopRequested } from '@/notifications/idleResponseHandler';
+import { requestMaintenanceSync } from '@/notifications/maintenanceSyncSignal';
 
 const MIN_DELTA_KM = 0.01; // 10 metres — same guard as background task
 
@@ -72,11 +75,16 @@ export function RideSessionProvider({ children }: { children: React.ReactNode })
             accumulatedKmRef.current += delta;
             // Round to 1 decimal place for the live counter display
             setDistanceKm(Math.round(accumulatedKmRef.current * 10) / 10);
+            // Real movement → push the "still tracking?" reminder back
+            void armIdleReminder();
           }
         }
         lastCoordsRef.current = { latitude, longitude };
       }
     );
+
+    // Arm right away so a rider who starts a session and never moves still gets reminded
+    void armIdleReminder();
 
     return true;
   }, []);
@@ -89,6 +97,8 @@ export function RideSessionProvider({ children }: { children: React.ReactNode })
     const vehicleId = activeVehicleId;
     const km = accumulatedKmRef.current;
 
+    void cancelIdleReminder();
+
     setIsTracking(false);
     setActiveVehicleId(null);
     setDistanceKm(0);
@@ -97,8 +107,23 @@ export function RideSessionProvider({ children }: { children: React.ReactNode })
 
     if (vehicleId && km > 0) {
       addRideDistance(vehicleId, km);
+      // The odometer just moved — a service may have crossed due / urgent / overdue
+      requestMaintenanceSync();
     }
   }, [activeVehicleId]);
+
+  // "Turn off GPS" on the idle-reminder notification (manual mode). The listener is registered
+  // once, so it must call the LATEST endRide (which closes over the current activeVehicleId) —
+  // hence the ref. Otherwise it would end a stale ride and lose the distance.
+  const endRideRef = useRef(endRide);
+  endRideRef.current = endRide;
+
+  useEffect(() => {
+    return onManualRideStopRequested(() => {
+      if (!subscriptionRef.current) return; // no active ride
+      void endRideRef.current();
+    });
+  }, []);
 
   // Clean up subscription if provider unmounts (should not happen in practice)
   useEffect(() => {

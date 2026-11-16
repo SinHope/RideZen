@@ -6,7 +6,8 @@ import { FlashList } from '@shopify/flash-list';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useFuelLogs } from '@/hooks/useFuelLogs';
 import { FuelLogItem } from '@/components/FuelLogItem';
-import { PlusIcon, ChevronRightIcon } from '@/components/icons';
+import { PlusIcon } from '@/components/icons';
+import { getHomeCurrency } from '@/services/currencyService';
 import { FuelLog } from '@/types';
 
 function VehiclePicker({ vehicles, selected, onSelect }: {
@@ -66,7 +67,8 @@ export default function FuelScreen() {
     />
   ), [handleDelete]);
 
-  const totalCost = monthStats.total_cost > 0 ? `SGD ${monthStats.total_cost.toFixed(0)}` : 'SGD —';
+  const homeCurrency = getHomeCurrency();
+  const totalCost = monthStats.total_cost > 0 ? `${homeCurrency} ${monthStats.total_cost.toFixed(0)}` : `${homeCurrency} —`;
   const avgConsumption = monthStats.avg_consumption > 0 ? `${monthStats.avg_consumption.toFixed(1)}` : '—';
   const totalLitres = monthStats.total_litres > 0 ? `${monthStats.total_litres.toFixed(1)} L` : '— L';
 
@@ -85,18 +87,9 @@ export default function FuelScreen() {
           elevation: 8,
         }}
       >
-        <View className="flex-row justify-between items-center mb-0.5">
-          <View className="flex-1">
-            <Text className="text-xs text-white/75 font-inter">{activeVehicle?.nickname ?? 'No vehicle'}</Text>
-            <Text className="text-2xl text-white font-playfair-medium">Fuel Log</Text>
-          </View>
-          <TouchableOpacity
-            className="w-9 h-9 rounded-full bg-white/15 items-center justify-center"
-            accessibilityRole="button"
-            accessibilityLabel="Delete fuel log"
-          >
-            <ChevronRightIcon color="white" size={16} />
-          </TouchableOpacity>
+        <View className="mb-0.5">
+          <Text className="text-xs text-white/75 font-inter">{activeVehicle?.nickname ?? 'No vehicle'}</Text>
+          <Text className="text-2xl text-white font-playfair-medium">Fuel Log</Text>
         </View>
 
         {/* Vehicle picker pills */}

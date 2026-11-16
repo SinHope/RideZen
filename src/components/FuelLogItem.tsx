@@ -12,6 +12,7 @@ interface Props {
 
 export const FuelLogItem = React.memo(function FuelLogItem({ log, onEdit, onDelete }: Props) {
   const cost = log.price_per_litre ? log.litres * log.price_per_litre : null;
+  const currency = log.currency ?? 'SGD';
 
   const handleDelete = () => {
     Alert.alert(
@@ -77,7 +78,7 @@ export const FuelLogItem = React.memo(function FuelLogItem({ log, onEdit, onDele
         </Text>
         {log.price_per_litre ? (
           <Text className="text-xs text-zen-muted font-inter">
-            at <Text className="text-zen-text font-inter-medium">SGD {log.price_per_litre.toFixed(2)}/L</Text>
+            at <Text className="text-zen-text font-inter-medium">{currency} {log.price_per_litre.toFixed(2)}/L</Text>
           </Text>
         ) : null}
         <Text className="text-xs text-zen-muted font-inter">
@@ -85,7 +86,7 @@ export const FuelLogItem = React.memo(function FuelLogItem({ log, onEdit, onDele
         </Text>
         {cost ? (
           <Text className="text-xs text-zen-muted font-inter">
-            Cost <Text className="text-zen-text font-inter-medium">SGD {cost.toFixed(2)}</Text>
+            Cost <Text className="text-zen-text font-inter-medium">{currency} {cost.toFixed(2)}</Text>
           </Text>
         ) : null}
       </View>
