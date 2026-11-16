@@ -1,18 +1,12 @@
 /**
- * Calculate fuel consumption in L/100km.
- * Only valid when both current and previous fills are full-tank fills.
+ * Format a Date as YYYY-MM-DD in the device's local timezone.
+ * (Unlike toISOString(), which is UTC and gives yesterday's date before 8am SGT.)
  */
-export function calcConsumption(
-  currentLitres: number,
-  currentOdo: number,
-  prevOdo: number,
-  prevWasFullTank: boolean,
-  currentIsFullTank: boolean
-): number | null {
-  if (!currentIsFullTank || !prevWasFullTank) return null;
-  const kmDriven = currentOdo - prevOdo;
-  if (kmDriven <= 0) return null;
-  return parseFloat(((currentLitres / kmDriven) * 100).toFixed(2));
+export function toLocalDateString(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 /**

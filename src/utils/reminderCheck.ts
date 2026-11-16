@@ -1,4 +1,34 @@
-import { MaintenanceItem, MaintenanceStatus, ReminderSettings } from '@/types';
+import { MaintenanceItem, MaintenanceStatus } from '@/types';
+
+// ─── Local-date helpers ───────────────────────────────────────────────────────
+// Due dates are stored as plain "YYYY-MM-DD". `new Date('2026-11-20')` is UTC midnight, which in a
+// negative-UTC timezone is still the 19th — so dates must be read as the LOCAL calendar day.
+// The badge (computeMaintenanceStatus) and the notification planner both use these, so they always agree.
+
+const DAY_MS = 86_400_000;
+
+/** "YYYY-MM-DD" (or an ISO date-time) → local midnight of that calendar day; null if unreadable. */
+export function parseLocalDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const plain = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (plain) {
+    const d = new Date(Number(plain[1]), Number(plain[2]) - 1, Number(plain[3]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const parsed = new Date(value);
+  if (isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+/** `date` moved by whole calendar days, still at local midnight (DST-safe). */
+export function addLocalDays(date: Date, days: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+/** Whole calendar days from `from` to `to` (both local midnights; negative when `to` is earlier). */
+export function localDaysBetween(from: Date, to: Date): number {
+  return Math.round((to.getTime() - from.getTime()) / DAY_MS);
+}
 
 export interface StatusThresholds {
   earlyKm: number;
@@ -38,10 +68,10 @@ export function loadStatusThresholds(): StatusThresholds {
 export function computeMaintenanceStatus(
   item: MaintenanceItem,
   currentOdometer: number,
-  thresholds: StatusThresholds = DEFAULT_THRESHOLDS
+  thresholds: StatusThresholds = DEFAULT_THRESHOLDS,
+  now: Date = new Date()
 ): MaintenanceItem {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const { earlyKm, earlyDays, finalKm, finalDays } = thresholds;
 
   let status: MaintenanceStatus = 'ok';
@@ -65,10 +95,9 @@ export function computeMaintenanceStatus(
   }
 
   // Check date-based status
-  if (item.next_due_date != null) {
-    const dueDate = new Date(item.next_due_date);
-    dueDate.setHours(0, 0, 0, 0);
-    daysRemaining = Math.floor((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const dueDate = parseLocalDate(item.next_due_date);
+  if (dueDate) {
+    daysRemaining = localDaysBetween(today, dueDate);
 
     if (item.interval_days != null) {
       const daysUsed = item.interval_days - Math.max(daysRemaining, 0);
@@ -94,53 +123,8 @@ export function computeMaintenanceStatus(
   };
 }
 
-const STATUS_RANK: Record<MaintenanceStatus, number> = { ok: 0, due: 1, urgent: 2, overdue: 3 };
+export const STATUS_RANK: Record<MaintenanceStatus, number> = { ok: 0, due: 1, urgent: 2, overdue: 3 };
 
 function statusMax(a: MaintenanceStatus, b: MaintenanceStatus): MaintenanceStatus {
   return STATUS_RANK[a] >= STATUS_RANK[b] ? a : b;
-}
-
-/**
- * Check which reminders should fire given current odometer and today's date.
- * Returns 'early' | 'final' | null for each item.
- */
-export function checkReminderTrigger(
-  item: MaintenanceItem,
-  reminder: ReminderSettings,
-  currentOdometer: number
-): 'early' | 'final' | null {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  // Check final reminder first (higher priority)
-  if (reminder.final_enabled === 1) {
-    const kmTrigger = item.next_due_odo != null && reminder.final_km_before != null
-      ? currentOdometer >= item.next_due_odo - reminder.final_km_before
-      : false;
-    const daysTrigger = item.next_due_date != null && reminder.final_days_before != null
-      ? (() => {
-          const dueDate = new Date(item.next_due_date!);
-          const daysLeft = Math.floor((dueDate.getTime() - today.getTime()) / 86400000);
-          return daysLeft <= reminder.final_days_before;
-        })()
-      : false;
-    if (kmTrigger || daysTrigger) return 'final';
-  }
-
-  // Check early warning
-  if (reminder.early_enabled === 1) {
-    const kmTrigger = item.next_due_odo != null && reminder.early_km_before != null
-      ? currentOdometer >= item.next_due_odo - reminder.early_km_before
-      : false;
-    const daysTrigger = item.next_due_date != null && reminder.early_days_before != null
-      ? (() => {
-          const dueDate = new Date(item.next_due_date!);
-          const daysLeft = Math.floor((dueDate.getTime() - today.getTime()) / 86400000);
-          return daysLeft <= reminder.early_days_before;
-        })()
-      : false;
-    if (kmTrigger || daysTrigger) return 'early';
-  }
-
-  return null;
 }

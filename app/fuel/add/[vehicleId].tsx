@@ -8,6 +8,7 @@ import { ArrowLeftIcon } from '@/components/icons';
 import { CurrencyPickerModal } from '@/components/CurrencyPickerModal';
 import { DateWheelPickerModal } from '@/components/DateWheelPicker';
 import { getHomeCurrency, getRates, convert, ExchangeRates } from '@/services/currencyService';
+import { toLocalDateString } from '@/utils/consumption';
 import { z } from 'zod';
 
 const fuelLogSchema = z.object({
@@ -48,7 +49,7 @@ function StyledInput({ label, value, onChangeText, placeholder, keyboardType, su
 export default function AddFuelLogScreen() {
   const insets = useSafeAreaInsets();
   const { vehicleId } = useLocalSearchParams<{ vehicleId: string }>();
-  const today = new Date().toISOString().split('T')[0];
+  const today = toLocalDateString();
 
   const [date, setDate] = useState(today);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -120,11 +121,20 @@ export default function AddFuelLogScreen() {
       return;
     }
 
+    // Lock in the home-currency price at log time so totals never mix currencies
+    const home = getHomeCurrency();
+    let priceHome: number | undefined;
+    if (parsed.data.price_per_litre != null) {
+      if (currency === home) priceHome = parsed.data.price_per_litre;
+      else if (rates) priceHome = parseFloat(convert(parsed.data.price_per_litre, currency, home, rates).toFixed(4));
+    }
+
     setSaving(true);
     const result = await fuelRepo.add({
       vehicle_id: parseInt(vehicleId),
       ...parsed.data,
       currency,
+      price_home: priceHome,
     });
     setSaving(false);
 
@@ -278,7 +288,7 @@ export default function AddFuelLogScreen() {
         {!isFullTank && (
           <View className="bg-amber-50 border border-amber-200 rounded-2xl px-3.5 py-2.5 mb-4">
             <Text className="text-xs text-amber-700 font-inter">
-              Partial fills are recorded but won't affect your L/100km average — consumption is only calculated between two full-tank fills.
+              Partial fills are recorded and rolled into your next full-tank fill's L/100km calculation — consumption is measured between two full-tank fills.
             </Text>
           </View>
         )}

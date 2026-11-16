@@ -1,15 +1,15 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { reminderRepo } from '@/repositories/reminderRepo';
-import { checkReminderTrigger } from '@/utils/reminderCheck';
-import { vehicleRepo } from '@/repositories/vehicleRepo';
-import { maintenanceRepo } from '@/repositories/maintenanceRepo';
 import { logToFile } from '@/utils/logger';
+
+// Notification handler, permission helper and Android channels.
+// Scheduling and cancelling the maintenance reminders lives in maintenanceNotifications.ts.
 
 // Configure notification handler
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: false,
     shouldSetBadge: true,
   }),
@@ -37,67 +37,15 @@ export async function setupAndroidChannel(): Promise<void> {
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#1B6CA8',
       });
+      // HIGH importance → heads-up banner, so the idle reminder's action buttons are visible
+      await Notifications.setNotificationChannelAsync('ride_tracking', {
+        name: 'Ride Tracking',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#1B6CA8',
+      });
     } catch (e) {
       logToFile('NOTIF_ERROR', 'setupAndroidChannel', String(e));
     }
-  }
-}
-
-export async function scheduleMaintenanceReminders(): Promise<void> {
-  try {
-    const hasPermission = await requestNotificationPermissions();
-    if (!hasPermission) return;
-
-    // Cancel all existing scheduled notifications first
-    await Notifications.cancelAllScheduledNotificationsAsync();
-
-    const vehiclesResult = await vehicleRepo.getAll();
-    if (!vehiclesResult.data) return;
-
-    for (const vehicle of vehiclesResult.data) {
-      const itemsResult = await maintenanceRepo.getByVehicle(vehicle.id, vehicle.current_odometer);
-      if (!itemsResult.data) continue;
-
-      for (const item of itemsResult.data) {
-        const reminderResult = await reminderRepo.getByItem(item.id);
-        if (!reminderResult.data) continue;
-
-        const trigger = checkReminderTrigger(item, reminderResult.data, vehicle.current_odometer);
-        if (!trigger) continue;
-
-        const isEarly = trigger === 'early';
-        const title = `RideZen — ${isEarly ? 'Service Due Soon' : 'Urgent: Service Required'}`;
-        const body = `${item.category} on ${vehicle.nickname} needs attention. Tap to view.`;
-
-        try {
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title,
-              body,
-              // SECURITY: Only store itemId — never sensitive data in payload
-              data: { itemId: item.id, vehicleId: vehicle.id },
-              categoryIdentifier: 'maintenance',
-              ...(Platform.OS === 'android' ? { channelId: 'maintenance' } : {}),
-            },
-            trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-              seconds: 60, // Schedule for 1 minute from now for immediate items
-            },
-          });
-        } catch (e) {
-          logToFile('NOTIF_ERROR', `schedule item ${item.id}`, String(e));
-        }
-      }
-    }
-  } catch (e) {
-    logToFile('NOTIF_ERROR', 'scheduleMaintenanceReminders', String(e));
-  }
-}
-
-export async function cancelAllReminders(): Promise<void> {
-  try {
-    await Notifications.cancelAllScheduledNotificationsAsync();
-  } catch (e) {
-    logToFile('NOTIF_ERROR', 'cancelAllReminders', String(e));
   }
 }

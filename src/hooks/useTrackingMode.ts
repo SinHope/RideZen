@@ -4,15 +4,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import { BG_LOCATION_TASK } from '@/services/backgroundLocationTask';
 import {
   getTrackingMode,
   setTrackingMode,
   getAutoTrackVehicleId,
   setAutoTrackVehicleId,
-  clearBgLastCoords,
 } from '@/services/trackingPreferences';
+import { disableAutoTracking } from '@/services/autoTracking';
+import { requestNotificationPermissions } from '@/notifications/scheduler';
 import { logToFile } from '@/utils/logger';
 
 export type TrackingMode = 'manual' | 'auto';
@@ -49,17 +50,6 @@ async function startBgTask(): Promise<boolean> {
   }
 }
 
-async function stopBgTask(): Promise<void> {
-  try {
-    const isRunning = await TaskManager.isTaskRegisteredAsync(BG_LOCATION_TASK);
-    if (isRunning) {
-      await Location.stopLocationUpdatesAsync(BG_LOCATION_TASK);
-    }
-  } catch (e) {
-    logToFile('TRACKING_MODE', 'stopBgTask', String(e));
-  }
-}
-
 export function useTrackingMode() {
   const [mode, setMode] = useState<TrackingMode>('manual');
   const [loading, setLoading] = useState(true);
@@ -67,6 +57,15 @@ export function useTrackingMode() {
   useEffect(() => {
     setMode(getTrackingMode());
     setLoading(false);
+  }, []);
+
+  // The idle-reminder notification can switch tracking to manual while the app is in the
+  // background (outside React). Re-read the saved mode whenever the app comes back.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setMode(getTrackingMode());
+    });
+    return () => sub.remove();
   }, []);
 
   // ─── Switch to Auto ──────────────────────────────────────────────────────────
@@ -88,6 +87,11 @@ export function useTrackingMode() {
       return bg.canAskAgain ? 'background_only_while_using' : 'background_never_ask';
     }
 
+    // Step 3: Notification permission, for the "still tracking?" idle reminder
+    // (Android 13+ runtime permission). Awaited so the system dialogs don't overlap.
+    // Not required — a denial only means no reminder; tracking still works.
+    await requestNotificationPermissions();
+
     // Both permissions granted — start background task and save mode
     setAutoTrackVehicleId(vehicleId);
     const started = await startBgTask();
@@ -103,9 +107,7 @@ export function useTrackingMode() {
 
   // ─── Switch to Manual ────────────────────────────────────────────────────────
   const switchToManual = useCallback(async (): Promise<void> => {
-    await stopBgTask();
-    clearBgLastCoords();
-    setTrackingMode('manual');
+    await disableAutoTracking();
     setMode('manual');
   }, []);
 

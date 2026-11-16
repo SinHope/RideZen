@@ -16,7 +16,7 @@ Track fuel logs, monitor maintenance schedules, get notified before things go ov
 - **Tyre pairing** — Front Tyre and Rear Tyre displayed side-by-side in compact cards
 - **Status badges** — overdue / due soon / urgent / all good, driven by user-configurable thresholds
 - **User-configurable reminder thresholds** — early warning (km + days) and final reminder (km + days) stored in `app_settings` and applied across the whole app
-- **Reminders** — two-stage push notifications (default: 1000 km / 14 days early, 200 km / 3 days final)
+- **Maintenance push notifications** — a phone notification when a service becomes due soon, urgent or overdue, using the same thresholds as the status badges (default: 1000 km / 14 days early, 200 km / 3 days final). Works with the app closed; one notification per level; you choose the time of day and whether several are grouped into one summary
 - **Odometer tracking** — Manual Ride Session (tap Start/End) or Always Auto-track (background GPS)
 - **PDF export** — full vehicle report (vehicle info, fuel log, maintenance schedule) generated on-device via `expo-print` and shared as a PDF file
 - **Privacy policy modal** — in-app scrollable privacy policy accessible from Settings
@@ -87,25 +87,36 @@ src/
     useTrackingMode.ts     # Reads/writes mode, handles permission flows, launch recheck
 
   notifications/
-    scheduler.ts
+    scheduler.ts                     # Notification handler, permission helper, Android channels
+    maintenancePlanner.ts            # Pure rules: what to notify and when (levels, once-per-level, schedule, grouping)
+    maintenanceNotifications.ts      # syncMaintenanceNotifications() — cancel, plan, send/schedule, log; debounce + single-flight
+    maintenanceSyncSignal.ts         # Dependency-free hook repositories call after writes (avoids an import cycle)
+    maintenanceResponseHandler.ts    # Tap on a maintenance notification → opens the item / Home
+    maintenanceBootstrap.ts          # First-launch permission prompt, daily-task registration, app-resume re-check
+    idleReminder.ts                  # GPS "still tracking?" reminder (arm / cancel)
+    idleResponseHandler.ts           # Turn off GPS / Leave it button taps
 
   repositories/
     vehicleRepo.ts         # includes updateOdometer()
     fuelRepo.ts
     maintenanceRepo.ts     # logService(), updateItem(), getHistory(), getByVehicle()
-    reminderRepo.ts
+    reminderRepo.ts        # legacy — no longer used for notifications (thresholds are global, in app_settings)
+    notifyLogRepo.ts       # maintenance_notify_log — which level was already notified per item
 
   services/
     trackingPreferences.ts     # SQLite read/write for tracking_mode, onboarding flag, reminder thresholds
     rideSession.ts             # Haversine distance calc + odometer update (pure, no UI)
     backgroundLocationTask.ts  # TaskManager.defineTask() — registered at bundle load via _layout.tsx import
+    notificationPreferences.ts # Push notifications switch, notification time, group-into-summary, permission-asked flag
+    maintenanceBackgroundTask.ts # Daily safety-net check (expo-background-task), registered at bundle load
 
   types/
     index.ts                   # Vehicle, FuelLog, MaintenanceItem, ServiceLogInput, StatusThresholds, etc.
 
   utils/
     consumption.ts
-    reminderCheck.ts     # computeMaintenanceStatus() — accepts StatusThresholds, loadStatusThresholds()
+    reminderCheck.ts     # computeMaintenanceStatus() — accepts StatusThresholds, loadStatusThresholds(); local-date helpers
+    notifyTime.ts        # "HH:MM" notification-time helpers (parse / format / validate)
     export.ts            # exportAllDataAsPdf() — HTML → PDF via expo-print
     flags.ts             # One-shot in-memory cross-screen prompts
     cn.ts
@@ -123,6 +134,10 @@ src/
 | V1 | Core tables: `vehicles`, `fuel_logs`, `maintenance_items`, `maintenance_logs`, `reminder_settings` |
 | V2 | `app_settings` key-value table (tracking mode, onboarding flag) |
 | V3 | Inserts Front Fork Servicing + Vehicle Wash into all existing vehicles |
+| V4 | `fuel_logs.currency` column |
+| V7 | Backfills the expanded item catalogue into existing vehicles |
+| V8 | `fuel_logs.price_home` column (per-litre price in the home currency) |
+| V9 | `maintenance_notify_log` table — which maintenance level was already notified, per item |
 
 ### app_settings keys
 
@@ -136,6 +151,10 @@ src/
 | `final_reminder_days` | number (default: 3) | days before due to trigger "urgent" status |
 | `auto_track_vehicle_id` | number | Vehicle ID currently assigned to auto-track mode |
 | `bg_last_lat` / `bg_last_lon` | float | Last known GPS coordinate (persists background task restarts) |
+| `maintenance_notifications_enabled` | `1` / `0` (default ON) | Settings → Push notifications switch |
+| `maintenance_notify_time` | `HH:MM` (default `09:00`) | Time of day date-based reminders fire |
+| `maintenance_notify_grouped` | `1` / `0` (default OFF) | Group notifications due at the same moment into one summary |
+| `notif_permission_asked` | `true` | The first-launch notification permission prompt was already shown |
 
 ---
 
@@ -256,6 +275,19 @@ The task must be defined at **module top-level** — not inside a component or h
 
 ---
 
+## Maintenance Notifications — Architecture
+
+A notification is sent when a service item reaches **due soon**, **urgent** or **overdue**. The level is the badge's level (same Settings thresholds), and each level is announced **once** — `maintenance_notify_log` remembers what was sent; logging the service resets it.
+
+- **Date-based items** (e.g. every 365 days) are pre-scheduled with Android for your chosen time on the day each level starts, so they arrive with the app closed.
+- **Km-based items** have no predictable date, so they are re-checked whenever the odometer or the data can change: app launch / resume, end of a manual ride, auto-tracking (at most every 5 min), any save to vehicles / odometer / service logs / items / fuel logs, and Settings changes.
+- **Daily safety net:** `expo-background-task` re-checks about every 24 h (Android may delay it).
+- Everything funnels into `syncMaintenanceNotifications()` (`src/notifications/maintenanceNotifications.ts`): cancel our pending notifications, plan with the pure `planMaintenanceNotifications()`, send / schedule, log. It only touches identifiers starting `maint-` — never the GPS idle reminder.
+- **Permission:** asked once on first launch and when the Settings switch is turned ON; background checks only check it.
+- Details: [TechnicalDesign.md §9.6](TechnicalDesign.md). Plan and as-built notes: [docs/maintenance-notifications-plan.md](docs/maintenance-notifications-plan.md).
+
+---
+
 ## PDF Export
 
 `exportAllDataAsPdf(vehicleId, vehicleNickname)` in `src/utils/export.ts`:
@@ -274,14 +306,16 @@ The task must be defined at **module top-level** — not inside a component or h
 | Setting | Behaviour |
 |---|---|
 | Odometer Tracking | Card selector — Manual Ride Session vs Auto-track Always. Handles full permission flow. |
-| Push notifications | Toggle (Switch). Enables/disables scheduled reminders. |
-| Default early warning | Opens edit modal. Saves `early_warning_km` + `early_warning_days` to `app_settings`. Displayed as current values in sub-text. |
-| Default final reminder | Opens edit modal. Saves `final_reminder_km` + `final_reminder_days` to `app_settings`. |
+| Push notifications | Switch, saved (default ON). OFF cancels every pending maintenance notification; ON asks for permission if needed, then re-checks and sends anything that came due meanwhile. |
+| Notification time | Opens the Android time dialog (default 9:00 AM). Date-based reminders fire at this time; saving re-books them. Greyed out while notifications are OFF. |
+| Group into one summary | Switch, saved (default OFF). ON → notifications due at the same moment become one "N services need attention". Greyed out while notifications are OFF. |
+| Default early warning | Opens edit modal. Saves `early_warning_km` + `early_warning_days` to `app_settings`. Displayed as current values in sub-text. Also re-checks notifications. |
+| Default final reminder | Opens edit modal. Saves `final_reminder_km` + `final_reminder_days` to `app_settings`. Also re-checks notifications. |
 | Export data | Calls `exportAllDataAsPdf()`. Shows "Generating PDF…" while in progress. |
 | Privacy | Opens full in-app scrollable privacy policy modal. |
 | RideZen Pro | Coming Soon badge. |
 
-Reminder threshold changes take effect immediately on next maintenance list load (no app restart needed).
+Reminder threshold changes take effect immediately on next maintenance list load (no app restart needed) and re-check the maintenance notifications.
 
 ---
 
@@ -386,6 +420,12 @@ npx expo run:android
 
 ---
 
+## Installing an Update on the Phone
+
+Build with the `preview` profile and install over USB with adb. Full steps in [how-to-update.md](how-to-update.md).
+
+---
+
 ## Building for Production
 
 ```bash
@@ -399,6 +439,8 @@ eas build --profile production --platform android
 - All data is stored locally in SQLite — uninstalling the app deletes everything permanently
 - Maintenance items are auto-seeded on vehicle create (`src/db/seeds.ts`) based on vehicle type
 - `src/utils/flags.ts` handles one-shot cross-screen prompts (maintenance setup prompt, tracking onboarding)
-- Reminder threshold changes in Settings take effect on the next maintenance list load
+- Reminder threshold changes in Settings take effect on the next maintenance list load, and re-check the maintenance notifications
+- `expo-background-task` and `@react-native-community/datetimepicker` are native modules (maintenance notifications) — they need a new APK build, not just a Metro reload
+- Tests: `npm test` (Jest, `__tests__/`) — 49 suites / 1,113 tests, ~98% statement coverage; guide and known gaps in [docs/testing.md](docs/testing.md)
 - GPS accuracy vs. wheel odometer: ~2–5% drift per trip using `Accuracy.Balanced` — acceptable for maintenance interval tracking
 - Background location requires a fresh EAS dev build after `app.json` permission entries are added

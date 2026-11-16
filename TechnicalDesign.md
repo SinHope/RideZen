@@ -1,7 +1,7 @@
 # RideZen — Technical Design Document
 
 **Version:** 1.2.0  
-**Last updated:** May 2026  
+**Last updated:** November 2026  
 **Author:** TulusNas Software Studio
 
 ---
@@ -34,7 +34,7 @@ RideZen is a fully offline, privacy-first motorcycle maintenance and odometer tr
 ┌────────────────────▼────────────────────────────────┐
 │               Repository Layer                       │
 │  vehicleRepo  fuelRepo  maintenanceRepo              │
-│  reminderRepo                                        │
+│  reminderRepo (legacy)  notifyLogRepo                │
 └────────────────────┬────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────┐
@@ -43,12 +43,14 @@ RideZen is a fully offline, privacy-first motorcycle maintenance and odometer tr
 │  trackingPreferences.ts (app_settings R/W)           │
 │  backgroundLocationTask.ts (OS background task)      │
 │  currencyService.ts (exchange rates, conversion)     │
+│  notificationPreferences.ts (notification settings)  │
+│  notifications/ (planner + sync, see 9.6)            │
 └────────────────────┬────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────┐
 │              Database Layer                          │
 │  expo-sqlite (sync API)  ·  ridezen.db               │
-│  Migrations V1 → V3  ·  Seeds per vehicle type       │
+│  Migrations V1 → V9  ·  Seeds per vehicle type       │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -81,12 +83,13 @@ RideZen is a fully offline, privacy-first motorcycle maintenance and odometer tr
 | date | TEXT | YYYY-MM-DD |
 | odometer | REAL | |
 | litres | REAL | |
-| price_per_litre | REAL | Optional |
+| price_per_litre | REAL | Optional. In pump currency (`currency`) |
 | currency | TEXT | ISO 4217 code, e.g. `SGD`, `MYR`. Default `'SGD'`. Added in V4 migration. |
+| price_home | REAL | `price_per_litre` converted to home currency at log time. Used for all cost aggregates so totals never mix currencies. NULL when no conversion was possible (offline, no cached rates). Added in V8 migration. |
 | is_full_tank | INTEGER | 1 = full, 0 = partial |
 | notes | TEXT | Optional |
-| km_since_last | REAL | Computed on insert and update |
-| consumption | REAL | L/100km, computed on insert and update |
+| km_since_last | REAL | Recomputed for the whole vehicle chain after every add/update/delete |
+| consumption | REAL | L/100km. Computed at each full-tank fill: litres since the previous full-tank fill (partials included) ÷ km between the two full fills. Recomputed for the whole chain after every add/update/delete |
 | created_at | TEXT | |
 
 #### `maintenance_items`
@@ -130,6 +133,19 @@ RideZen is a fully offline, privacy-first motorcycle maintenance and odometer tr
 | final_days_before | INTEGER | |
 | final_enabled | INTEGER | 1 = on |
 
+#### `maintenance_notify_log`
+Which level of each service item the rider was already notified about, so a level is announced once and never repeated (§9.6). Added in migration V9.
+
+| Column | Type | Notes |
+|---|---|---|
+| item_id | INTEGER FK | → `maintenance_items(id)`, CASCADE delete |
+| level | TEXT | `due` / `urgent` / `overdue` |
+| fire_at | TEXT | ISO-8601 UTC. **Past** = delivered; **future** = scheduled with Android and still pending |
+
+Primary key `(item_id, level)`. Future rows are deleted and rewritten on every sync (their notifications are cancelled and re-planned).
+
+> `reminder_settings` is **no longer read**. Notification levels come from the global thresholds in `app_settings` — the same ones that drive the status badges — so a notification can never disagree with its badge. The table is left in place.
+
 #### `app_settings`
 | Column | Type | Notes |
 |---|---|---|
@@ -155,6 +171,10 @@ RideZen is a fully offline, privacy-first motorcycle maintenance and odometer tr
 | `exchange_rates_base` | — | Base currency the cached rates are relative to |
 | `exchange_rates_cached_at` | — | ISO datetime of last rates fetch |
 | `recent_currencies` | — | JSON array of up to 3 recently used currency codes |
+| `maintenance_notifications_enabled` | `1` | `1` / `0` — the Settings "Push notifications" switch (absent = ON) |
+| `maintenance_notify_time` | `09:00` | 24-hour `HH:MM` the date-based reminders fire at |
+| `maintenance_notify_grouped` | `0` | `1` = send one summary when several notifications are due at once |
+| `notif_permission_asked` | — | `true` once the first-launch notification permission prompt was shown |
 
 ### 3.2 Migration history
 
@@ -164,27 +184,48 @@ RideZen is a fully offline, privacy-first motorcycle maintenance and odometer tr
 | V2 | `app_settings` key-value store |
 | V3 | Inserts Front Fork Servicing + Vehicle Wash into all existing vehicles |
 | V4 (DB ver 5) | `ALTER TABLE fuel_logs ADD COLUMN currency TEXT DEFAULT 'SGD'` |
+| V7 (DB ver 7) | Backfills new items (Valve Clearance, Oil Filter, Throttle Body Cleaning, Engine Overhaul, CVT Clutch & Bell, Clutch Plates) into existing vehicles; renames CVT Basic Service → CVT Service, CVT Variator/Pulley → CVT Sliders & Guides, Chain Replacement → Chain & Sprocket Set; retunes CVT Rollers to 18,000 km |
+| V8 (DB ver 8) | `ALTER TABLE fuel_logs ADD COLUMN price_home REAL`; backfills `price_home = price_per_litre` for logs already in the home currency. Foreign-currency logs stay NULL (historical rate unknown) and are excluded from cost totals |
+| V9 (DB ver 9) | `CREATE TABLE maintenance_notify_log (item_id, level, fire_at, PRIMARY KEY (item_id, level))` — remembers which maintenance level was already notified (§9.6) |
 
 ### 3.3 Seeded maintenance items
 
-Items are inserted by `src/db/seeds.ts` when a vehicle is created.
+Items are inserted by `src/db/seeds.ts` when a vehicle is created. Items added in later versions are backfilled onto pre-existing vehicles via migrations (see §3.2).
 
 | Category | Scope | Default Interval |
 |---|---|---|
-| Engine Oil | scooter, manual_bike, car | 3,000 km / 90 days |
-| Air Filter | scooter, manual_bike, car | 10,000 km / 180 days |
-| Spark Plug | scooter, manual_bike, car | 10,000 km / 365 days |
-| Brake Fluid | scooter, manual_bike, car | — / 730 days |
-| Battery | scooter, manual_bike, car | — / 730 days |
-| Coolant | scooter, car | — / 730 days |
-| Chain Lubrication | manual_bike | 1,000 km |
-| Chain Adjustment | manual_bike | 2,500 km |
-| Chain Replacement | manual_bike | 18,000 km |
-| Clutch Cable Inspection | manual_bike | 10,000 km |
-| Front Tyre | scooter, manual_bike, car | 20,000 km |
-| Rear Tyre | scooter, manual_bike, car | 15,000 km |
+| Engine Oil | universal | 5,000 km / 90 days |
+| Oil Filter | universal | 10,000 km / 365 days |
+| Air Filter | universal | 10,000 km / 365 days |
+| Throttle Body Cleaning | universal | 12,000 km / 365 days |
+| Spark Plug | universal | 10,000 km / 365 days |
+| Valve Clearance | universal | 12,000 km / 365 days |
+| Front Brake Pads | universal | 15,000 km |
+| Rear Brake Pads | universal | 15,000 km |
+| Brake Fluid | universal | — / 730 days |
+| Front Tyre | universal | 30,000 km |
+| Rear Tyre | universal | 25,000 km |
+| Battery | universal | — / 730 days |
+| Coolant | universal | — / 730 days |
 | Front Fork Servicing | universal | 24,000 km / 360 days |
+| Engine Overhaul | universal | None |
 | Vehicle Wash | universal | None |
+| Gear Oil | scooter, manual_bike | 5,000 km / 180 days |
+| CVT Service | scooter | 8,000 km |
+| CVT Rollers | scooter | 18,000 km |
+| CVT V Belt | scooter | 25,000 km |
+| CVT Sliders & Guides | scooter | 24,000 km |
+| CVT Clutch & Bell | scooter | 30,000 km |
+| Chain Lubrication | manual_bike | 800 km |
+| Chain Adjustment | manual_bike | 2,500 km |
+| Chain & Sprocket Set | manual_bike | 18,000 km |
+| Clutch Cable Inspection | manual_bike | 10,000 km |
+| Clutch Plates | manual_bike | 35,000 km |
+| Transmission Oil | car | 50,000 km |
+| Timing Belt/Chain | car | 80,000 km |
+| Cabin Air Filter | car | 15,000 km / 365 days |
+| Power Steering Fluid | car | — / 730 days |
+| Wiper Blades | car | — / 365 days |
 
 ---
 
@@ -306,7 +347,7 @@ Located in `src/utils/export.ts`.
 
 ### 7.1 Reminder thresholds
 
-Saved to `app_settings` via `setAppSetting(key, value)`. Read by `loadStatusThresholds()` in `reminderCheck.ts` on every maintenance data load. Changes take effect immediately on next list refresh — no app restart required.
+Saved to `app_settings` via `setAppSetting(key, value)`. Read by `loadStatusThresholds()` in `reminderCheck.ts` on every maintenance data load. Changes take effect immediately on next list refresh — no app restart required. Saving a threshold also re-checks maintenance notifications (§9.6), because the due / urgent levels move with them.
 
 ### 7.2 Tracking mode selector
 
@@ -315,6 +356,18 @@ A custom two-card selector (Manual / Auto) that runs the full permission flow wh
 ### 7.3 Privacy policy
 
 Fully in-app. No external URL. 7 sections: data storage, location data, no accounts, no analytics, export, data deletion, contact.
+
+### 7.4 Maintenance notification settings
+
+Under **Reminders**, stored in `app_settings` via `notificationPreferences.ts` (synchronous, never throws, falls back to the defaults — also read from background tasks):
+
+| Control | Behaviour |
+|---|---|
+| **Push notifications** (switch) | Default ON. OFF → `syncMaintenanceNotifications()` cancels everything pending. ON → asks for permission (if the phone blocks it, an alert offers *Open Settings*), then re-checks so anything that came due while OFF is sent. |
+| **Notification time** | Android time dialog (`DateTimePickerAndroid`; iOS falls back to an inline picker). Default 9:00 AM. Applies to **date-based** reminders only; saving re-books every pending one. |
+| **Group into one summary** (switch) | Default OFF. ON → notifications due at the same moment are merged into one "N services need attention". |
+
+Time and summary are greyed out (and not pressable) while Push notifications is OFF.
 
 ---
 
@@ -360,14 +413,35 @@ Home → tap "Start Ride" on vehicle card
 
 ### 8.4 Edit / delete a fuel log
 ```
-/(tabs)/fuel → tap "⋮" on a fuel log card
-  → Alert: Edit | Delete (destructive) | Cancel
+/(tabs)/fuel → pencil / trash buttons on a fuel log card
   → Edit → /fuel/edit/[logId] (modal)
        Pre-filled: date, odometer, litres, price/L, currency, full-tank, notes
-       Save → fuelRepo.update(id, input) → recalculates km_since_last + consumption
+       Save → fuelRepo.update(id, input)
+            → recalcConsumptionChain() rewalks the whole vehicle chain
+            → syncVehicleOdometer() raises vehicle odometer if a log exceeds it
             → router.back() → useFocusEffect reloads list
-  → Delete → fuelRepo.delete(id) → list reloads immediately
+  → Delete → confirm Alert → fuelRepo.delete(id)
+            → recalcConsumptionChain() → list reloads immediately
 ```
+
+### 8.4.1 Consumption chain recalculation
+
+`km_since_last` and `consumption` are never computed incrementally. After **every**
+`fuelRepo.add / update / delete`, `recalcConsumptionChain(db, vehicleId)` re-walks all of
+the vehicle's logs ordered by odometer:
+
+- `km_since_last` = distance from the previous log (any fill type).
+- `consumption` is set only on full-tank fills: *(litres of this fill + all partial fills
+  since the previous full-tank fill) ÷ km between the two full-tank fills × 100*.
+- Partial fills therefore contribute litres to the next full fill's figure instead of
+  breaking the chain; back-dated inserts, edits, and deletions can never leave a
+  neighbouring log with stale values.
+
+Cost aggregates (`getMonthlyStats`, `getMonthlyGlobalStats`, PDF export) sum
+`litres × price_home` — the home-currency price locked in at save time — so fills logged
+in foreign currencies are never added raw into home-currency totals. Fills without a
+stored conversion are excluded from cost totals (but still count toward litres and
+consumption).
 
 ### 8.5 VehicleCard — subtitle line
 
@@ -419,6 +493,64 @@ Full-screen searchable modal (FlashList, 162 items). Search filters by code, nam
 
 ---
 
+### 9.5 GPS Idle Reminder
+
+Local notification "Still tracking your ride?" with **Turn off GPS** / **Leave it** buttons, shown ~60 s after the rider stops while tracking (auto or manual).
+
+- **Mechanism:** every movement ≥ 10 m calls `armIdleReminder()`, which schedules a one-shot `TIME_INTERVAL` notification (60 s) under the fixed identifier `ridezen-gps-idle`; scheduling again replaces it. Throttled to once per 10 s. The OS fires it even if JS is asleep. "Leave it" only dismisses — nothing re-arms until the next movement.
+- **Android channel:** `ride_tracking` (HIGH importance). `channelId` is set on the **trigger**, not the content.
+- **Buttons:** category `gps_idle`, actions `TURN_OFF_GPS` / `LEAVE_IT` with `opensAppToForeground: false`. Taps reach `handleIdleReminderResponse()` via `addNotificationResponseReceivedListener` (app alive) and a `registerTaskAsync` background task (Android, app backgrounded/killed); the handler dedupes the same tap.
+- **Turn off GPS:** auto mode → `disableAutoTracking()` (stop `RIDEZEN_BG_LOCATION`, clear coords, mode = manual, cancel reminder). Manual mode → `onManualRideStopRequested` listeners; `RideSessionContext` ends the ride via a ref to the latest `endRide` so distance is saved.
+- **Maintenance interaction:** the maintenance sync only ever cancels identifiers starting `maint-` (or `data.type` `maintenance*`), never the idle reminder — it never calls `cancelAllScheduledNotificationsAsync()`.
+- **iOS caveat:** a button tap with the app fully killed does not run JS (no background task for action taps on iOS); with active background location the app process is normally alive.
+- Tests: `__tests__/gpsIdle/`. Plan: `docs/gps-idle-reminder-plan.md`.
+
+### 9.6 Maintenance Notifications
+
+A phone notification when a service item becomes **due soon**, **urgent** or **overdue**, with or without the app open. Plan and as-built notes: `docs/maintenance-notifications-plan.md`.
+
+**Rules** (implemented once, in the pure `planMaintenanceNotifications()` in `src/notifications/maintenancePlanner.ts`):
+- **Level = the badge's level.** It uses `computeMaintenanceStatus()` with the Settings thresholds, so notification and badge agree; changing a threshold moves both.
+- **One notification per level.** No repeats while overdue. When the item is back to `ok` (service logged) its memory is cleared; if it drops to a lower non-ok level (due date moved out, thresholds lowered) the lower level is recorded as already told (`markSent`) so it is not re-announced.
+- **km-based levels fire as soon as noticed** (no predictable date). **Date-based levels fire at the user's notify time on the day the level starts** (`due`: due date − early days, `urgent`: − final days, `overdue`: due date + 1). A level whose time has already passed today is sent now. Several levels at the same instant keep only the highest; a final window longer than the early window never yields a lower level after a higher one.
+- **Grouping:** with *Group into one summary* ON, notifications at the same moment (immediate ones, or scheduled ones with an identical `fireAt`) become one `maint-summary-<ms>` notification listing up to 3 items + "+N more".
+- Dates are read as **local** calendar days (`parseLocalDate()`); see the UTC bug noted in the CHANGELOG.
+
+**Sync** — `syncMaintenanceNotifications()` in `maintenanceNotifications.ts` is the single entry point and is idempotent:
+1. Switch OFF, or permission not granted (only *checked* — a prompt needs the UI) → cancel our pending notifications and stop.
+2. Load vehicles + items. **If any read fails, change nothing** (planning on partial data would treat missing items' log rows as orphans and forget them).
+3. Cancel pending `maint-*`, delete future log rows, read the log, plan.
+4. Apply `clearLog`, record `markSent`, send `notifyNow` (trigger `{ channelId: 'maintenance' }`), schedule `schedule` (`DATE` trigger + channel). A row is logged **only after** the OS accepted the notification, so a failed one is retried next sync.
+- Never throws. One run at a time; a call during a run requests exactly one rerun afterwards. `syncIfStale(ms)` skips if a sync finished recently (used from the GPS task). `requestMaintenanceSync()` is a 2 s debounce for bursts of writes.
+- Only identifiers starting `maint-` (or `data.type` `maintenance` / `maintenance_summary`) are ever cancelled — never the GPS idle reminder.
+- `channelId` goes on the **trigger**, not the content (SDK 55).
+
+**When it runs:**
+
+| Trigger | Where |
+|---|---|
+| App launch (after migrations + channel setup) | `initMaintenanceNotifications()` from `_layout.tsx` `init()` — also asks for permission once and registers the daily task |
+| App returns to foreground | `attachMaintenanceAppStateSync()` → `requestMaintenanceSync()` |
+| Any write that can change a due level | `vehicleRepo` create / update / updateOdometer / delete, `maintenanceRepo` logService / updateItem, `fuelRepo` add / update → `requestMaintenanceSync()` |
+| Manual ride ends | `RideSessionContext.endRide` (after `addRideDistance`) |
+| Auto-tracking moves the odometer | `backgroundLocationTask` → `await syncIfStale(5 min)` |
+| Settings changes | switch, time, summary, saving a threshold → `syncMaintenanceNotifications()` |
+| Daily safety net | `RIDEZEN_MAINT_CHECK` via `expo-background-task` (`minimumInterval` 24 h; registered once — re-registering would restart the timer) |
+
+Repositories call `requestMaintenanceSync()` from the **dependency-free** `maintenanceSyncSignal.ts`; `maintenanceNotifications.ts` registers its debounced sync there on load. (Importing it from the repositories directly would be an import cycle — it reads those same repositories.)
+
+**Tap handling** — `maintenanceResponseHandler.ts` (imported at the top of `_layout.tsx`): a single item opens `/maintenance/log/<id>`, a summary opens Home. Live taps arrive through `addNotificationResponseReceivedListener`; when the tap *launched* the app, `NotificationLaunchHandler` in `_layout.tsx` reads `getLastNotificationResponse()` once the navigator is ready. Both paths are deduped on `identifier:date`.
+
+**Limits:** Android treats `DATE` triggers as exact only if allowed and otherwise delivers a few minutes late (no `SCHEDULE_EXACT_ALARM` needed). expo-notifications restores scheduled notifications after a reboot. Vivo's battery manager can still delay or kill pending alarms and the daily task — RideZen should be set to unrestricted background.
+
+**Tests:** `__tests__/maintNotif/` (12 files); one runs under a negative-UTC timezone via `__tests__/helpers/tzLosAngelesEnv.js`.
+
+## 10. Testing
+
+Jest (`jest-expo/android` preset) + React Native Testing Library. **49 suites / 1,113 tests, ~98% statement coverage.** Data-layer tests (migrations, repositories, seeds, `export`, `currencyService`) run against a **real SQLite engine** — `sql.js` (a dev dependency) behind the `expo-sqlite` sync API — so the app's actual SQL is executed; screens and components use faked hooks / repositories (the data-heavy screens use the real DB). Real defects the tests uncovered but that are not yet fixed are recorded as `it.failing` tests and listed in `docs/testing.md` ("Known gaps").
+
+Run with `npm test` (~1.5–2 min) or `npm run test:watch`. Full guide — folder map, helpers, conventions, gotchas, known gaps: [docs/testing.md](docs/testing.md).
+
 ## 11. Build Notes
 
 ### 11.1 Development (Windows)
@@ -469,6 +601,10 @@ eas build --profile production --platform android
 
 Background location changes require a new EAS build — Metro reload is not sufficient.
 
+### 11.4 Native modules added for maintenance notifications
+
+`expo-background-task` (daily check, WorkManager) and `@react-native-community/datetimepicker` (the *Notification time* dialog) are native modules and are listed in the `app.json` `plugins`. They need a **new APK build** — Metro reload and Expo Go cannot load them. Installing on the Vivo follows `how-to-update.md`.
+
 ---
 
 ## 12. Privacy & Compliance
@@ -480,3 +616,11 @@ Background location changes require a new EAS build — Metro reload is not suff
 - Complies with Singapore PDPA, Google Play Developer Policies, Apple App Store guidelines
 - Export: PDF generated on-device, shared only when user explicitly taps Share
 - Data deletion: uninstalling the app removes all data permanently
+
+---
+
+## 13. Future Considerations
+
+> Not planned, not scheduled — recorded here so the intent isn't lost.
+
+- **Cloud sync (Google login, cross-device)** — *out of scope for now.* Would only be considered if users explicitly request syncing across devices. The current architecture (local-only SQLite, no backend, no account) is a deliberate present-state choice, not a permanent guarantee. **Caveat:** building this would directly contradict the "fully offline, no cloud, no account" claims in §1, §12, the in-app privacy policy (§7.3), and the onboarding tutorial — all of those would need revising in the same change. Treat it as a positioning decision, not just a technical one.

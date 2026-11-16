@@ -2,6 +2,7 @@ import { getDb } from '@/db/client';
 import { seedMaintenanceItems } from '@/db/seeds';
 import { Vehicle, VehicleInput, Result } from '@/types';
 import { logToFile } from '@/utils/logger';
+import { requestMaintenanceSync } from '@/notifications/maintenanceSyncSignal';
 
 export const vehicleRepo = {
   async getAll(): Promise<Result<Vehicle[]>> {
@@ -42,6 +43,7 @@ export const vehicleRepo = {
       // Seed maintenance items for this vehicle type
       seedMaintenanceItems(db, vehicleId, input.type, input.current_odometer);
 
+      requestMaintenanceSync();
       return { data: vehicleId, error: null };
     } catch (e) {
       logToFile('DB_ERROR', 'vehicleRepo.create', String(e));
@@ -67,6 +69,7 @@ export const vehicleRepo = {
         `UPDATE vehicles SET ${fields}, updated_at = ? WHERE id = ?`,
         [...values, now, id]
       );
+      requestMaintenanceSync();
       return { data: undefined, error: null };
     } catch (e) {
       logToFile('DB_ERROR', 'vehicleRepo.update', String(e));
@@ -82,6 +85,7 @@ export const vehicleRepo = {
         'UPDATE vehicles SET current_odometer = ?, updated_at = ? WHERE id = ?',
         [odometer, now, id]
       );
+      requestMaintenanceSync();
       return { data: undefined, error: null };
     } catch (e) {
       logToFile('DB_ERROR', 'vehicleRepo.updateOdometer', String(e));
@@ -93,6 +97,7 @@ export const vehicleRepo = {
     try {
       const db = getDb();
       db.runSync('DELETE FROM vehicles WHERE id = ?', [id]);
+      requestMaintenanceSync();
       return { data: undefined, error: null };
     } catch (e) {
       logToFile('DB_ERROR', 'vehicleRepo.delete', String(e));

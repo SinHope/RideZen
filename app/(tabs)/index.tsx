@@ -19,7 +19,9 @@ import { consumeMaintenancePromptPending, consumeTrackingOnboardingPending } fro
 import { useRideSession } from '@/contexts/RideSessionContext';
 import { useTrackingMode, SwitchToAutoOutcome } from '@/hooks/useTrackingMode';
 import { getTrackingMode } from '@/services/trackingPreferences';
-import { Alert } from 'react-native';
+import { getHomeCurrency } from '@/services/currencyService';
+import { requestNotificationPermissions } from '@/notifications/scheduler';
+import { Alert, AppState } from 'react-native';
 
 // Alert strip with pulse animation
 function AlertStrip({ message, onPress }: { message: string; onPress: () => void }) {
@@ -143,6 +145,18 @@ export default function HomeScreen() {
   const { isTracking, activeVehicleId, distanceKm, startRide, endRide } = useRideSession();
   const { recheckOnLaunch, switchToAuto } = useTrackingMode();
 
+  // "Turn off GPS" on the idle-reminder notification can change the mode (and odometer) while
+  // the app is backgrounded; focus effects don't re-run on foreground, so refresh here.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        setTrackingModeState(getTrackingMode());
+        reload();
+      }
+    });
+    return () => sub.remove();
+  }, [reload]);
+
   useFocusEffect(useCallback(() => {
     reload();
     // Reload tracking mode from SQLite (may have changed in Settings)
@@ -194,6 +208,8 @@ export default function HomeScreen() {
   }, []));
 
   const handleStartRide = async (vehicleId: number) => {
+    // Notification permission for the "still tracking?" idle reminder — optional, ride starts regardless
+    await requestNotificationPermissions();
     const ok = await startRide(vehicleId);
     if (!ok) return;
     Alert.alert('', "Tap 'End Ride' when you're done to save your distance.", [{ text: 'Got it' }]);
@@ -372,7 +388,7 @@ export default function HomeScreen() {
             <View className="flex-row gap-2.5">
               <QuickStatCard
                 label="Fuel spent"
-                value={monthlyStats?.totalCost ? `SGD ${monthlyStats.totalCost.toFixed(0)}` : '—'}
+                value={monthlyStats?.totalCost ? `${getHomeCurrency()} ${monthlyStats.totalCost.toFixed(0)}` : '—'}
                 sub="across all vehicles"
               />
               <QuickStatCard

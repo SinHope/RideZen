@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, KeyboardAvoidingView, Platform,
+  TextInput, ActivityIndicator, KeyboardAvoidingView,
 } from 'react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, withTiming, withDelay, runOnJS,
@@ -112,6 +112,8 @@ export default function VehicleDetailScreen() {
   const [year, setYear] = useState('');
   const [plate, setPlate] = useState('');
   const [odometer, setOdometer] = useState('');
+  const [odoChanged, setOdoChanged] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -132,7 +134,7 @@ export default function VehicleDetailScreen() {
         setModel(v.model ?? '');
         setYear(v.year?.toString() ?? '');
         setPlate(v.plate_number ?? '');
-        setOdometer(v.current_odometer.toString());
+        setOdometer(Math.round(v.current_odometer).toString());
       }
     });
   }, [id]);
@@ -158,7 +160,8 @@ export default function VehicleDetailScreen() {
       model: model.trim() || undefined,
       year: year ? parseInt(year) : undefined,
       plate_number: plate.trim() || undefined,
-      current_odometer: parseFloat(odometer) || vehicle.current_odometer,
+      // Only send when edited — undefined keeps the precise stored value (GPS decimals)
+      current_odometer: odoChanged ? (parseInt(odometer, 10) || undefined) : undefined,
     });
     setSaving(false);
     setShowUpdateModal(false);
@@ -179,7 +182,7 @@ export default function VehicleDetailScreen() {
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-zen-bg"
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
     >
       {/* Header */}
       <View
@@ -213,6 +216,7 @@ export default function VehicleDetailScreen() {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         className="flex-1 px-4 pt-5"
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -280,8 +284,11 @@ export default function VehicleDetailScreen() {
         <View className="bg-white rounded-2xl overflow-hidden mb-8"
           style={{ shadowColor: '#1B6CA8', shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 }}>
           <FieldRow label="Current km" last>
-            <TextInput value={odometer} onChangeText={markDirty(setOdometer)} placeholder="0"
-              placeholderTextColor="#A0B4BF" keyboardType="decimal-pad"
+            <TextInput value={odometer}
+              onChangeText={(v) => { markDirty(setOdometer)(v); setOdoChanged(true); }}
+              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150)}
+              placeholder="0"
+              placeholderTextColor="#A0B4BF" keyboardType="number-pad"
               style={{ fontFamily: 'Inter_500Medium', fontSize: 14, color: '#0D3B5E', textAlign: 'right', flex: 1 }} />
             <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: '#A0B4BF', marginLeft: 4 }}>km</Text>
           </FieldRow>
